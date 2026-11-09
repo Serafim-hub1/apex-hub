@@ -3,10 +3,18 @@ import { useSearchParams } from 'react-router-dom';
 import { Wallet, RefreshCw, Plus, ClipboardCheck, UserPlus, Search, CheckCheck, Phone, FileSpreadsheet, AlertTriangle } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { clubCall, clubConfigured, readCache, reminderText, DEFAULT_LISTS, PRICES } from '../lib/club';
-import { Modal, ModalHead, Empty, TitleArea, useToast } from '../components/ui';
+import { Modal, ModalHead, Empty, TitleArea, Collapse, useToast } from '../components/ui';
 import { todayStr, fmt, humanDay } from '../lib/dates';
 
 const STATUS_ORDER = { 'Не оплачен': 0, 'Разовые': 1, 'Оплачен': 2 };
+/** Группы списка абонементов. Важное открыто, остальное свёрнуто (выбор запоминается на устройстве). */
+const PAY_SECTIONS = [
+  { key: 'unpaid', label: 'Не оплатили', open: true, test: (p) => p.status !== 'Оплачен' && p.status !== 'Разовые' },
+  { key: 'soon', label: 'Скоро заканчивается', open: true, test: (p) => p.status === 'Оплачен' && !!p.reminder },
+  { key: 'oneoff', label: 'Разовые', open: false, test: (p) => p.status === 'Разовые' },
+  { key: 'paid', label: 'Оплатили', open: false, test: (p) => p.status === 'Оплачен' && !p.reminder },
+];
+const LEADS_CLOSED = ['Клиент', 'Отказ'];
 
 /** Пилюля статуса оплаты: красная — нет оплаты, нейтральная — разовые, зелёная — абонемент. */
 export function PayPill({ p }) {
@@ -72,7 +80,6 @@ function Payments({ openAdd }) {
   const sum = useClub('summary');
   const recent = useClub('payRecent');
   const [form, setForm] = useState(openAdd ? {} : null);
-  const [f, setF] = useState('all');
   const [g, setG] = useState('');
   const [q, setQ] = useState('');
   const s = sum.data;
@@ -80,12 +87,9 @@ function Payments({ openAdd }) {
   const list = useMemo(() => (s?.payments || []).filter((p) => {
     if (g && p.group !== g) return false;
     if (q && !p.fio.toLowerCase().includes(q.toLowerCase())) return false;
-    if (f === 'unpaid') return p.status === 'Не оплачен';
-    if (f === 'oneoff') return p.status === 'Разовые';
-    if (f === 'soon') return p.status === 'Оплачен' && p.reminder;
-    if (f === 'paid') return p.status === 'Оплачен';
     return true;
-  }).sort((a, b) => (STATUS_ORDER[a.status] ?? 1) - (STATUS_ORDER[b.status] ?? 1) || a.fio.localeCompare(b.fio, 'ru')), [s, f, g, q]);
+  }).sort((a, b) => (STATUS_ORDER[a.status] ?? 1) - (STATUS_ORDER[b.status] ?? 1) || a.fio.localeCompare(b.fio, 'ru')), [s, g, q]);
+  const sections = useMemo(() => PAY_SECTIONS.map((sec) => ({ ...sec, items: list.filter(sec.test) })), [list]);
 
   const reload = () => { sum.reload(); recent.reload(); };
 
@@ -110,9 +114,7 @@ function Payments({ openAdd }) {
         <div className="panel-b">
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
             <div className="chips">
-              {[['all', 'Все'], ['unpaid', 'Не оплатили'], ['oneoff', 'Разовые'], ['soon', 'Скоро заканчивается'], ['paid', 'Оплатили']].map(([k, l]) => (
-                <button key={k} className={`chip ${f === k ? 'on' : ''}`} onClick={() => setF(k)}>{l}</button>
-              ))}
+              <button className={`chip ${!g ? 'on' : ''}`} onClick={() => setG('')}>Все группы</button>
               {DEFAULT_LISTS.groups.map((x) => <button key={x} className={`chip ${g === x ? 'on' : ''}`} onClick={() => setG(g === x ? '' : x)}>{x}</button>)}
             </div>
             <div className="search-box">
@@ -122,48 +124,50 @@ function Payments({ openAdd }) {
           </div>
           {!s && sum.busy && [1, 2, 3, 4].map((i) => <div key={i} className="skel" style={{ margin: '16px 0', width: `${90 - i * 10}%` }} />)}
           {s && list.length === 0 && <Empty>По этому фильтру никого.</Empty>}
-          {list.map((p) => (
-            <div key={p.id} className="prow" onClick={() => setForm({ fio: p.fio, abonement: p.status === 'Разовые' ? 'Разовая' : p.abonement })} style={{ cursor: 'pointer' }}>
-              <div style={{ minWidth: 0 }}>
-                <div className="n">{p.fio}</div>
-                <div className="s">
-                  {p.group}
-                  {p.status === 'Разовые' && p.oneOff ? ` · разовых в этом месяце: ${p.oneOff.count}, последнее ${p.oneOff.last}` : ''}
-                  {p.status === 'Оплачен' && p.abonement ? ` · ${p.abonement}` : ''}
-                  {p.status === 'Оплачен' && p.date ? ` · оплата ${p.date}` : ''}
+          {sections.filter((sec) => sec.items.length > 0).map((sec) => (
+            <Collapse key={sec.key} id={`pay-${sec.key}`} title={sec.label} count={sec.items.length} defaultOpen={sec.open} forceOpen={!!q} className={`pay-sec ${sec.key}`}>
+              {sec.items.map((p) => (
+                <div key={p.id} className="prow" onClick={() => setForm({ fio: p.fio, abonement: p.status === 'Разовые' ? 'Разовая' : p.abonement })} style={{ cursor: 'pointer' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="n">{p.fio}</div>
+                    <div className="s">
+                      {p.group}
+                      {p.status === 'Разовые' && p.oneOff ? ` · разовых в этом месяце: ${p.oneOff.count}, последнее ${p.oneOff.last}` : ''}
+                      {p.status === 'Оплачен' && p.abonement ? ` · ${p.abonement}` : ''}
+                      {p.status === 'Оплачен' && p.date ? ` · оплата ${p.date}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', justifyItems: 'end', gap: 3 }}>
+                    <PayPill p={p} />
+                    {p.amount ? <span className="s num">{rub(p.amount)}</span> : null}
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: 'grid', justifyItems: 'end', gap: 3 }}>
-                <PayPill p={p} />
-                {p.amount ? <span className="s num">{rub(p.amount)}</span> : null}
-              </div>
-            </div>
+              ))}
+            </Collapse>
           ))}
         </div>
       </section>
 
       <div className="dash">
-        <section className="panel">
-          <div className="panel-h"><h2 className="h2">Последние оплаты</h2></div>
+        <Collapse id="pay-recent" className="panel" defaultOpen={false} title={<span className="h2">Последние оплаты</span>} count={recent.data?.length}>
           <div className="panel-b">
             {(recent.data || []).length === 0 && <Empty>{recent.busy ? 'Загружаем…' : 'Записей пока нет.'}</Empty>}
             {(recent.data || []).map((r) => (
               <div key={r.payId} className="prow">
                 <div style={{ minWidth: 0 }}><div className="n">{r.fio}</div><div className="s">{r.date} · {r.method || '—'} · {r.abonement || '—'}</div></div>
-                <div style={{ display: 'grid', justifyItems: 'end' }}><b className="num">{rub(r.amount)}</b><span className={`s ${r.status === 'Возврат' ? '' : ''}`}>{r.status}</span></div>
+                <div style={{ display: 'grid', justifyItems: 'end' }}><b className="num">{rub(r.amount)}</b><span className="s">{r.status}</span></div>
               </div>
             ))}
           </div>
-        </section>
-        <section className="panel">
-          <div className="panel-h"><h2 className="h2">Долги по лиге</h2></div>
+        </Collapse>
+        <Collapse id="pay-league" className="panel" title={<span className="h2">Долги по лиге</span>} count={s?.league?.length}>
           <div className="panel-b">
             {(s?.league || []).length === 0 && <Empty>Долгов нет.</Empty>}
             {(s?.league || []).map((l, i) => (
               <div key={i} className="alert-row"><span className="pill">{l.league}</span><span className="n">{l.fio}</span><b className="num" style={{ color: 'var(--danger)' }}>{rub(l.debt)}</b></div>
             ))}
           </div>
-        </section>
+        </Collapse>
       </div>
 
       {form && <PayForm initial={form} onClose={() => setForm(null)} onSaved={reload} payments={s?.payments || []} />}
@@ -392,17 +396,18 @@ function Leads() {
         {statuses.map((s) => {
           const items = list.filter((l) => (l.status || 'Новая') === s);
           return (
-            <div key={s} className="col">
-              <div className="col-h"><span className="h2" style={{ fontSize: 15 }}>{s}</span><span className="n">{items.length}</span></div>
-              {items.map((l) => (
-                <div key={l.row} className="lead-card" onClick={() => setEdit(l)}>
-                  <b>{l.fio || 'Без имени'}</b>
-                  <span>{[l.group, l.age && `${l.age} лет`, l.source].filter(Boolean).join(' · ')}</span>
-                  {l.trialDate && <span className="pill acc" style={{ justifySelf: 'start' }}>Пробная {humanDay(l.trialDate).toLowerCase()}</span>}
-                  {l.owner && <span>Ведёт: {l.owner}</span>}
-                </div>
-              ))}
-            </div>
+            <Collapse key={s} id={`lead-${s}`} className="col lead-col" title={s} count={items.length} defaultOpen={!LEADS_CLOSED.includes(s)}>
+              <div className="col-cards">
+                {items.map((l) => (
+                  <div key={l.row} className="lead-card" onClick={() => setEdit(l)}>
+                    <b>{l.fio || 'Без имени'}</b>
+                    <span>{[l.group, l.age && `${l.age} лет`, l.source].filter(Boolean).join(' · ')}</span>
+                    {l.trialDate && <span className="pill acc" style={{ justifySelf: 'start' }}>Пробная {humanDay(l.trialDate).toLowerCase()}</span>}
+                    {l.owner && <span>Ведёт: {l.owner}</span>}
+                  </div>
+                ))}
+              </div>
+            </Collapse>
           );
         })}
       </div>

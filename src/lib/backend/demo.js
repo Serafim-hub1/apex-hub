@@ -53,10 +53,7 @@ function seed() {
     const day = addDays(now, i);
     const dow = day.getDay();
     const date = ymd(day);
-    if (dow === 1) ev({ title: 'Игровой час · Junior', type: 'training', group: 'Junior', date, start: '17:30', end: '18:30' });
-    if (dow === 2) ev({ title: 'Тренировка · Junior', type: 'training', group: 'Junior', date, start: '17:30', end: '19:00' });
-    if (dow === 2) ev({ title: 'Тренировка · Взрослые', type: 'training', group: 'Взрослые', date, start: '20:30', end: '22:30' });
-    if (dow === 4) ev({ title: 'Тренировка · Junior', type: 'training', group: 'Junior', date, start: '18:30', end: '20:00' });
+    // Тренировки Junior и взрослых приходят из постоянного расписания (lib/schedule.js).
     if (dow === 6 && i % 2 === 0) ev({ title: 'Игра лиги u14: APEX — Storm', type: 'game', group: 'Лига u14', date, start: '12:00', end: '13:30', location: 'Дворец спорта' });
   }
   ev({ title: 'Созвон команды: итоги месяца', type: 'meeting', date: d(2), start: '21:00', end: '21:45', location: 'Telegram' });

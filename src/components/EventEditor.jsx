@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Calendar, Clock, MapPin, Bell, Users, Repeat, Trash2, Tag, AlignLeft } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Calendar, Clock, MapPin, Bell, Users, Repeat, Trash2, Tag, AlignLeft, CalendarClock } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { EVENT_TYPES, GROUPS, REMINDERS } from '../config';
 import { todayStr, ymd, addDays, parseYmd, fmt } from '../lib/dates';
@@ -21,6 +22,7 @@ export function EventEditor({ event, initial, onClose }) {
   const [confirm, setConfirm] = useState(false);
   const set = (p) => setD((x) => ({ ...x, ...p }));
   const inSeries = !isNew && event.seriesId;
+  const fromSchedule = !isNew && !!event.ruleId;
 
   const save = async () => {
     if (!d.title.trim()) return;
@@ -35,7 +37,7 @@ export function EventEditor({ event, initial, onClose }) {
     } else {
       const { date, ...rest } = clean;
       await updateEvent(event, series ? rest : clean, { series });
-      toast(series ? 'Серия обновлена' : 'Событие сохранено');
+      toast(series ? 'Серия обновлена' : fromSchedule ? 'Изменено только это занятие' : 'Событие сохранено');
     }
     onClose();
   };
@@ -110,6 +112,15 @@ export function EventEditor({ event, initial, onClose }) {
           <label htmlFor="ev-notes"><AlignLeft size={13} style={{ verticalAlign: -2 }} /> ЗАМЕТКИ</label>
           <textarea id="ev-notes" className="textarea" placeholder="План тренировки, состав, что взять…" value={d.notes || ''} onChange={(e) => set({ notes: e.target.value })} />
         </div>
+        {fromSchedule && (
+          <div className="banner">
+            <CalendarClock size={18} />
+            <span className="grow">
+              Занятие из постоянного расписания. Правки и отмена касаются только {fmt(event.ruleDate, 'd MMMM')}.
+              {' '}Расписание целиком — в <Link to="/settings#schedule" onClick={onClose}>настройках</Link>.
+            </span>
+          </div>
+        )}
         {inSeries && (
           <label className="banner" style={{ cursor: 'pointer', alignItems: 'center' }}>
             <input type="checkbox" checked={series} onChange={(e) => setSeries(e.target.checked)} />
@@ -118,21 +129,22 @@ export function EventEditor({ event, initial, onClose }) {
         )}
       </div>
       <div className="modal-f">
-        {!isNew && <button className="btn danger" onClick={() => setConfirm(true)}><Trash2 size={16} /> Удалить</button>}
+        {!isNew && <button className="btn danger" onClick={() => setConfirm(true)}><Trash2 size={16} /> {fromSchedule ? 'Отменить занятие' : 'Удалить'}</button>}
         <span className="sp" />
         <button className="btn ghost" onClick={onClose}>Отмена</button>
         <button className="btn primary" onClick={save} disabled={!d.title.trim()}>{isNew ? 'Создать' : 'Сохранить'}</button>
       </div>
       {confirm && (
         <Confirm
-          title="Удалить событие?"
-          text={inSeries ? 'Это событие повторяется. Удалить только его или его и все следующие?' : `«${d.title}» исчезнет из календаря у всех.`}
-          action={inSeries ? 'Только это' : 'Удалить'}
+          title={fromSchedule ? 'Отменить занятие?' : 'Удалить событие?'}
+          text={fromSchedule ? `Тренировка ${fmt(event.ruleDate, 'd MMMM')} пропадёт из календаря у всех. Остальные недели не изменятся.`
+            : inSeries ? 'Это событие повторяется. Удалить только его или его и все следующие?' : `«${d.title}» исчезнет из календаря у всех.`}
+          action={fromSchedule ? 'Отменить занятие' : inSeries ? 'Только это' : 'Удалить'}
           extra={inSeries && (
             <button className="btn" onClick={async () => { await deleteEvent(event, { series: true }); toast('Серия удалена'); onClose(); }}>Это и следующие</button>
           )}
           onNo={() => setConfirm(false)}
-          onYes={async () => { await deleteEvent(event); toast('Событие удалено'); onClose(); }}
+          onYes={async () => { await deleteEvent(event); toast(fromSchedule ? 'Занятие отменено' : 'Событие удалено'); onClose(); }}
         />
       )}
     </Modal>

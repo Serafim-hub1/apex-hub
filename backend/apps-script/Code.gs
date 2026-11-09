@@ -495,7 +495,7 @@ function tick_() {
   const due = users.filter((u) => u.digestEnabled !== false && u.lastDigest !== today && hm >= (u.digestTime || '08:30') && minutesBetween_(u.digestTime || '08:30', hm) < 120);
   if (due.length) {
     const tasks = fsQuery_('tasks', 'dueDate', 'LESS_THAN_OR_EQUAL', today).filter((t) => t.status !== 'done');
-    const events = fsQuery_('events', 'date', 'EQUAL', today).sort((a, b) => String(a.start).localeCompare(String(b.start)));
+    const events = fsQuery_('events', 'date', 'EQUAL', today).concat(scheduleFor_(today)).sort((a, b) => String(a.start).localeCompare(String(b.start)));
     let pay = null;
     try { pay = summary_().kpi; } catch (err) { Logger.log(err); }
     due.forEach((u) => {
@@ -512,6 +512,19 @@ function tick_() {
       fsSet_('users', u.id, { lastDigest: today });
     });
   }
+}
+
+/**
+ * Занятия постоянного расписания на дату (правила kind = 'weekly' в events, см. src/lib/schedule.js).
+ * Пропускаем отменённые (skip) и те, у которых на эту дату есть своё событие.
+ */
+function scheduleFor_(date) {
+  const wd = Number(Utilities.formatDate(new Date(date + 'T12:00:00'), TZ, 'u'));
+  const real = fsQuery_('events', 'date', 'EQUAL', date);
+  return fsQuery_('events', 'kind', 'EQUAL', 'weekly').filter((r) => Number(r.weekday) === wd
+      && (!r.from || r.from <= date) && (!r.until || r.until >= date) && (r.skip || []).indexOf(date) < 0
+      && !real.some((e) => (e.ruleId === r.id && e.ruleDate === date) || (e.type === 'training' && e.group === r.group)))
+    .map((r) => ({ title: r.title || 'Тренировка · ' + r.group, start: r.start, end: r.end, allDay: false, date: date }));
 }
 
 function minutesBetween_(a, b) {

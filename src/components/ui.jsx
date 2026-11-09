@@ -1,5 +1,5 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { X, Check } from 'lucide-react';
+import { X, Check, ChevronDown } from 'lucide-react';
 import { useStore } from '../lib/store';
 
 /* ── Аватар ── */
@@ -104,6 +104,34 @@ export function Empty({ icon: Icon, children, action }) {
       {Icon && <Icon size={30} strokeWidth={1.5} />}
       <div>{children}</div>
       {action}
+    </div>
+  );
+}
+
+/* ── Раскрывающийся блок. Состояние (открыт/закрыт) запоминается на устройстве по id. ── */
+export function Collapse({ id, title, count, defaultOpen = true, forceOpen = false, extra, className = '', children }) {
+  const key = id ? `apex-open-${id}` : null;
+  const [open, setOpen] = useState(() => {
+    if (!key) return defaultOpen;
+    try { const v = localStorage.getItem(key); return v === null ? defaultOpen : v === '1'; } catch { return defaultOpen; }
+  });
+  const isOpen = forceOpen || open;
+  const toggle = () => {
+    const next = !isOpen;
+    setOpen(next);
+    try { if (key) localStorage.setItem(key, next ? '1' : '0'); } catch { /* приватный режим */ }
+  };
+  return (
+    <div className={`collapse ${isOpen ? 'open' : ''} ${className}`}>
+      <div className="collapse-h">
+        <button type="button" className="collapse-t" onClick={toggle} aria-expanded={isOpen}>
+          <ChevronDown size={16} className="chev" />
+          <span className="ttl">{title}</span>
+          {count !== undefined && count !== null && <span className="cnt">{count}</span>}
+        </button>
+        {extra}
+      </div>
+      <div className="collapse-b" inert={isOpen ? undefined : ''}><div>{children}</div></div>
     </div>
   );
 }

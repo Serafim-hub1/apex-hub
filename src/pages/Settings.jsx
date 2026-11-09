@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Bell, BellOff, Smartphone, LogOut, Send, LayoutGrid, Palette, Copy, RotateCcw, CheckCircle2, MessageCircle } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { APPS_SCRIPT_URL, REMINDERS } from '../config';
-import { Avatar, Switch, useToast } from '../components/ui';
+import { Avatar, Switch, Collapse, useToast } from '../components/ui';
+import { ScheduleEditor } from '../components/ScheduleEditor';
 
 const COLORS = ['#58D6FF', '#F5F6F4', '#A7ADB4', '#7EE3B8', '#FFC24B', '#FF8A8A'];
 const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -25,7 +26,11 @@ export default function Settings() {
   const [name, setName] = useState(profile?.name || '');
 
   useEffect(() => { setName(profile?.name || ''); }, [profile?.name]);
-  useEffect(() => { if (location.hash.includes('push')) document.getElementById('push')?.scrollIntoView({ behavior: 'smooth' }); }, []);
+  const toSchedule = location.hash.includes('schedule');
+  useEffect(() => {
+    const target = location.hash.includes('push') ? 'push' : toSchedule ? 'schedule' : null;
+    if (target) setTimeout(() => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  }, [toSchedule]);
 
   if (!profile) return <div className="page"><div className="skel" style={{ width: 200 }} /></div>;
 
@@ -74,6 +79,13 @@ export default function Settings() {
             </div>
             <div className="muted" style={{ fontSize: 13, marginTop: 10 }}>{profile.email} · администратор {demo && '· демо-режим'}</div>
           </div>
+        </section>
+
+        <section id="schedule">
+          <Collapse id="settings-schedule" className="panel" defaultOpen={false} forceOpen={toSchedule}
+            title={<span className="h2">Расписание тренировок</span>} count={null}>
+            <div className="panel-b"><ScheduleEditor /></div>
+          </Collapse>
         </section>
 
         <section className="panel" id="push">

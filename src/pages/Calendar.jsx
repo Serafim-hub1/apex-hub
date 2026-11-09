@@ -66,7 +66,7 @@ export default function Calendar() {
       <div className="cal-split">
         <div style={{ minWidth: 0 }}>
           <div className="cal-head">{WD.map((d) => <div key={d}>{d}</div>)}</div>
-          <div className="cal">
+          <div className="cal" key={ymd(month)}>
             {days.map((d) => {
               const k = ymd(d);
               const data = byDay[k] || { ev: [], t: [] };
