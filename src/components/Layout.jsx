@@ -128,7 +128,8 @@ export default function Layout() {
               <WifiOff size={18} /><span className="grow">{syncError}</span>
             </div>
           )}
-          <Outlet />
+          {/* key по адресу — при переходе между разделами страница заново проигрывает вход */}
+          <div className="route" key={loc.pathname}><Outlet /></div>
         </div>
 
         <nav className="tabbar" aria-label="Разделы">

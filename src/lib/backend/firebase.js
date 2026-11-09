@@ -51,7 +51,7 @@ export function createFirebaseBackend() {
     signOut: () => fbSignOut(auth),
     getIdToken: () => auth.currentUser?.getIdToken() ?? Promise.resolve(null),
     listen(col, cb, onError) {
-      return onSnapshot(collection(db, col), (s) => cb(snapToList(s)), (e) => { console.error(col, e); onError?.(e); });
+      return onSnapshot(collection(db, col), (s) => cb(snapToList(s), { fromCache: s.metadata.fromCache }), (e) => { console.error(col, e); onError?.(e); });
     },
     async add(col, data) {
       const ref = await addDoc(collection(db, col), data);

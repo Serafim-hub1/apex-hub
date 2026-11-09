@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { DEMO, TEAM } from '../config';
-import { computeRemindAt, ymd, addDays, parseYmd } from './dates';
+import { computeRemindAt, ymd, addDays, parseYmd, todayStr } from './dates';
+import { DEFAULT_SCHEDULE, DEFAULT_LOCATION, expandSchedule, isRule, yesterdayStr } from './schedule';
 
 const StoreCtx = createContext(null);
 export const useStore = () => useContext(StoreCtx);
@@ -26,7 +27,9 @@ export function StoreProvider({ children }) {
   const [notes, setNotes] = useState([]);
   const [ready, setReady] = useState({ tasks: false, events: false, notes: false, users: false });
   const [syncError, setSyncError] = useState(null);
+  const [eventsFromServer, setEventsFromServer] = useState(false);
   const profileEnsured = useRef(false);
+  const scheduleSeeded = useRef(false);
 
   useEffect(() => {
     let unsub = () => {};
@@ -49,7 +52,7 @@ export function StoreProvider({ children }) {
     const subs = [
       backend.listen('users', (l) => { setUsers(l); mark('users'); }, onErr),
       backend.listen('tasks', (l) => { setTasks(l); mark('tasks'); }, onErr),
-      backend.listen('events', (l) => { setEvents(l); mark('events'); }, onErr),
+      backend.listen('events', (l, meta) => { setEvents(l); mark('events'); if (!meta?.fromCache) setEventsFromServer(true); }, onErr),
       backend.listen('notes', (l) => { setNotes(l); mark('notes'); }, onErr),
     ];
     return () => subs.forEach((u) => u && u());
@@ -67,6 +70,20 @@ export function StoreProvider({ children }) {
       digestEnabled: true, digestTime: '08:30', defaultReminder: 60, createdAt: nowIso(),
     });
   }, [backend, auth, ready.users, users]);
+
+  // Правила постоянного расписания живут в events без даты; наружу отдаём обычные события + развёрнутые занятия.
+  const { rules, allEvents } = useMemo(() => {
+    const r = events.filter(isRule);
+    const real = events.filter((e) => !isRule(e));
+    return { rules: r, allEvents: [...real, ...expandSchedule(r, real)] };
+  }, [events]);
+
+  // Первый запуск: записываем стандартное расписание. Только по ответу сервера (не по пустому кэшу), id фиксированные.
+  useEffect(() => {
+    if (!backend || auth.status !== 'in' || !eventsFromServer || rules.length || scheduleSeeded.current) return;
+    scheduleSeeded.current = true;
+    DEFAULT_SCHEDULE.forEach(({ id, ...slot }) => backend.set('events', id, { ...slot, createdAt: nowIso() }));
+  }, [backend, auth.status, eventsFromServer, rules.length]);
 
   const me = auth.user?.uid;
   const profile = users.find((u) => u.id === me) || null;
@@ -140,6 +157,12 @@ export function StoreProvider({ children }) {
         return backend.addMany('events', items);
       },
       async updateEvent(ev, patch, { series = false } = {}) {
+        // Занятие из расписания: правка создаёт отдельное событие на эту дату, само расписание не меняется.
+        if (ev.virtual) {
+          const { id, virtual, ...base } = ev; // eslint-disable-line no-unused-vars
+          const n = { ...base, ...patch };
+          return backend.add('events', { ...n, createdBy: me, createdAt: nowIso(), remindAt: computeRemindAt(n.date, n.allDay ? null : n.start, n.remind) });
+        }
         const apply = (e) => {
           const n = { ...e, ...patch, date: series ? e.date : (patch.date ?? e.date) };
           return { ...patch, date: n.date, remindAt: computeRemindAt(n.date, n.allDay ? null : n.start, n.remind) };
@@ -152,11 +175,34 @@ export function StoreProvider({ children }) {
         }
       },
       async deleteEvent(ev, { series = false } = {}) {
+        // Отмена занятия из расписания на одну дату — дата попадает в skip правила.
+        if (ev.ruleId && ev.ruleDate) {
+          const rule = events.find((r) => r.id === ev.ruleId);
+          if (rule) await backend.update('events', rule.id, { skip: [...new Set([...(rule.skip || []), ev.ruleDate])] });
+          if (ev.virtual) return undefined;
+        }
         if (series && ev.seriesId) {
           const ids = events.filter((e) => e.seriesId === ev.seriesId && e.date >= ev.date).map((e) => e.id);
           return backend.removeMany('events', ids);
         }
         return backend.remove('events', ev.id);
+      },
+
+      /** Правка слота расписания. Прошедшие занятия сохраняют старое время: старый слот закрывается вчерашним днём. */
+      async saveScheduleSlot(old, data) {
+        const t = todayStr();
+        const clean = {
+          kind: 'weekly', type: 'training', weekday: Number(data.weekday), start: data.start, end: data.end,
+          group: data.group, title: `Тренировка · ${data.group}`, location: data.location || old?.location || DEFAULT_LOCATION,
+          until: null, updatedAt: nowIso(), updatedBy: me,
+        };
+        if (old && (!old.from || old.from >= t)) return backend.update('events', old.id, clean);
+        if (old) await backend.update('events', old.id, { until: yesterdayStr(), updatedAt: nowIso(), updatedBy: me });
+        return backend.add('events', { ...clean, from: t, skip: (old?.skip || []).filter((d) => d >= t), createdAt: nowIso(), createdBy: me });
+      },
+      async removeScheduleSlot(old) {
+        if (old.from && old.from >= todayStr()) return backend.remove('events', old.id);
+        return backend.update('events', old.id, { until: yesterdayStr(), updatedAt: nowIso(), updatedBy: me });
       },
 
       async createNote(data = {}) {
@@ -184,7 +230,7 @@ export function StoreProvider({ children }) {
     demo: DEMO,
     mode: backend?.mode,
     auth, me, profile, users, userById,
-    tasks, events, notes,
+    tasks, events: allEvents, schedule: rules, notes,
     loaded: ready.tasks && ready.events && ready.notes,
     syncError,
     ...actions,

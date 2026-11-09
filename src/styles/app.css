@@ -555,3 +555,96 @@ textarea.title-input { resize: none; overflow: hidden; display: block; min-heigh
 .picked { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--accent-line); background: var(--accent-soft); border-radius: var(--r); }
 .picked b { display: block; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .picked span { display: block; font-size: 12.5px; color: var(--muted); }
+
+/* ── Движение: короткие, «мягкие на выходе» анимации. Только opacity/transform/clip-path — без скачков вёрстки. ── */
+:root {
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);      /* быстрый старт, долгое мягкое торможение */
+  --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 0.16s; --dur-2: 0.32s; --dur-3: 0.6s;
+}
+@keyframes in-up { from { opacity: 0; transform: translateY(12px); } }
+@keyframes in-fade { from { opacity: 0; } }
+@keyframes in-line { from { opacity: 0; clip-path: inset(0 0 100% 0); transform: translateY(0.4em); } to { opacity: 1; clip-path: inset(0 0 -20% 0); transform: none; } }
+
+/* Вход страницы: заголовок «выезжает» из маски, блоки появляются лесенкой. */
+.route > .page > * { animation: in-up var(--dur-3) var(--ease) backwards; }
+.route > .page > :nth-child(2) { animation-delay: 60ms; }
+.route > .page > :nth-child(3) { animation-delay: 120ms; }
+.route > .page > :nth-child(4) { animation-delay: 170ms; }
+.route > .page > :nth-child(n+5) { animation-delay: 210ms; }
+.route .page-head .eyebrow { animation: in-fade var(--dur-3) var(--ease) backwards; }
+.route .page-head .h1, .route .hero .h1 { animation: in-line 0.8s var(--ease) 40ms backwards; }
+.kpis > * { animation: in-up var(--dur-3) var(--ease) backwards; }
+.kpis > :nth-child(2) { animation-delay: 50ms; } .kpis > :nth-child(3) { animation-delay: 100ms; } .kpis > :nth-child(4) { animation-delay: 150ms; }
+.settings > * { animation: in-up var(--dur-3) var(--ease) backwards; }
+.settings > :nth-child(2) { animation-delay: 50ms; } .settings > :nth-child(3) { animation-delay: 100ms; } .settings > :nth-child(n+4) { animation-delay: 140ms; }
+
+/* Строки списков проявляются при появлении (после фильтра, раскрытия, загрузки). */
+.prow, .att-row, .ag-row, .alert-row, .lead-card, .note-card, .sched-row { animation: in-fade var(--dur-2) var(--ease) backwards; }
+
+/* Календарь: смена месяца — короткий проявляющийся сдвиг. */
+.cal { animation: in-fade var(--dur-2) var(--ease) backwards; }
+.cal .day { transition: background var(--dur-1) var(--ease), box-shadow var(--dur-2) var(--ease); }
+
+/* Тактильный отклик: лёгкое «нажатие» вместо резкой смены цвета. */
+.btn, .icon-btn, .chip, .seg button, .fab, .att-btns button, .nav a, .nav button.nav-item, .collapse-t {
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease), box-shadow var(--dur-2) var(--ease);
+}
+.btn:active, .icon-btn:active, .chip:active, .seg button:active, .att-btns button:active { transform: scale(0.96); }
+.fab:active { transform: scale(0.92); }
+.lead-card, .note-card, .card, .subpages a { transition: border-color var(--dur-2) var(--ease), transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease); }
+@media (hover: hover) {
+  .lead-card:hover, .note-card:hover, .subpages a:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18); }
+}
+
+/* Модалки и тосты — на общих кривых. */
+.overlay { animation: in-fade var(--dur-2) var(--ease); }
+.modal { animation: rise var(--dur-2) var(--ease); }
+@media (max-width: 640px) { .modal { animation: sheet 0.36s var(--ease); } }
+.toast { animation: rise var(--dur-2) var(--ease); }
+
+/* ── Раскрывающиеся блоки ── */
+.collapse-h { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.collapse-t {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 9px 6px; margin: 0 -6px;
+  border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); cursor: pointer; text-align: left;
+}
+.collapse-t:hover { background: var(--hover); }
+.collapse-t .chev { flex: none; color: var(--muted); transform: rotate(-90deg); transition: transform var(--dur-2) var(--ease); }
+.collapse.open > .collapse-h .chev { transform: none; }
+.collapse-t .ttl { font-weight: 700; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.collapse-t .cnt { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--muted); background: var(--surface-2); border-radius: 10px; padding: 1px 8px; font-variant-numeric: tabular-nums; }
+.collapse-b { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--dur-2) var(--ease-io); }
+.collapse.open > .collapse-b { grid-template-rows: 1fr; }
+.collapse-b > div { min-height: 0; overflow: hidden; opacity: 0; transition: opacity var(--dur-1) var(--ease); }
+.collapse.open > .collapse-b > div { opacity: 1; transition: opacity var(--dur-2) var(--ease) 60ms; }
+.collapse + .collapse { border-top: 1px solid var(--line); }
+/* панель целиком как раскрывающийся блок */
+.panel.collapse > .collapse-h { padding: 6px 12px 6px 16px; }
+.panel.collapse > .collapse-h .collapse-t { padding: 8px 6px; }
+.panel.collapse + .panel.collapse { border-top: 1px solid var(--line); }
+/* группы статусов в списке абонементов */
+.pay-sec > .collapse-h .ttl { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-2); }
+.pay-sec.unpaid > .collapse-h .cnt { color: var(--danger); background: var(--danger-soft); }
+.pay-sec.soon > .collapse-h .cnt { color: var(--warn); background: var(--warn-soft); }
+.pay-sec .prow:last-child { border-bottom: 0; }
+/* колонки заявок */
+.lead-col { min-height: 0; gap: 0; }
+.lead-col > .collapse-h .ttl { font-family: var(--f-display); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; font-size: 15px; }
+.lead-col .col-cards { display: grid; gap: 8px; padding-top: 4px; }
+.lead-col.collapse + .lead-col.collapse { border-top: 1px solid var(--line); }
+@media (max-width: 899px) {
+  .pipeline { grid-auto-flow: row; grid-auto-columns: auto; overflow: visible; gap: 8px; }
+}
+
+/* ── Расписание тренировок (настройки) ── */
+.sched { display: grid; gap: 2px; }
+.sched-row { display: grid; grid-template-columns: 34px 104px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 6px 2px; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+.sched-day { font-weight: 800; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-text); }
+.sched-tm { font-weight: 700; }
+.sched-g { color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched-form { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; padding: 10px; border: 1px solid var(--accent-line); background: var(--accent-soft); border-radius: var(--r); margin: 4px 0; animation: in-fade var(--dur-2) var(--ease); }
+.sched-time { display: flex; align-items: center; gap: 6px; }
+.sched-time .input { width: 112px; }
+.sched-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 560px) { .sched-form { grid-template-columns: minmax(0, 1fr); } .sched-time .input { flex: 1; width: auto; } }
