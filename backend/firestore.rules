@@ -1,0 +1,23 @@
+rules_version = '2';
+// Доступ только у трёх кабинетов. Впишите сюда те же почты, что в Authentication.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isTeam() {
+      return request.auth != null
+        && request.auth.token.email.lower() in ['serafim@example.com', 'kuzma@example.com', 'anton@example.com'];
+    }
+    match /users/{uid} {
+      allow read: if isTeam();
+      allow write: if isTeam();
+    }
+    match /tasks/{id}  { allow read, write: if isTeam(); }
+    match /events/{id} { allow read, write: if isTeam(); }
+    match /notes/{id}  { allow read, write: if isTeam(); }
+    match /outbox/{id} { allow create: if isTeam(); }
+    // Токен устройства может записать только его владелец.
+    match /devices/{id} {
+      allow read, delete: if isTeam();
+      allow create, update: if isTeam() && request.resource.data.uid == request.auth.uid;
+    }
+  }
+}
