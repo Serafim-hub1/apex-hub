@@ -63,7 +63,7 @@ export async function clubCall(action, payload = {}, getIdToken) {
 
 /* ───────────────────────── демо-данные ───────────────────────── */
 
-const DEMO_KEY = 'apex-demo-club-v1';
+const DEMO_KEY = 'apex-demo-club-v2';
 function demoDb() {
   try {
     const s = JSON.parse(localStorage.getItem(DEMO_KEY));
@@ -82,6 +82,11 @@ function demoDb() {
   const month = ymd(new Date()).slice(0, 7);
   const journal = [];
   players.filter((p) => p.status === 'Активен').forEach((p, i) => {
+    if (i === 7) { // пример игрока на разовых оплатах
+      [2, 6].forEach((day) => journal.push({ payId: 'PAY-' + String(journal.length + 1).padStart(4, '0'), id: p.id, fio: p.fio, group: p.group,
+        date: month + '-0' + day, amount: 1600, status: 'Оплачен', method: 'Наличные', abonement: 'Разовая', comment: '' }));
+      return;
+    }
     if (i % 4 === 3) return;
     journal.push({ payId: 'PAY-' + String(journal.length + 1).padStart(4, '0'), id: p.id, fio: p.fio, group: p.group,
       date: month + '-0' + (1 + (i % 6)), amount: i % 3 === 0 ? 14500 : 11500, status: 'Оплачен', method: 'Перевод',
@@ -105,12 +110,17 @@ function demoSummary(db) {
   const daysLeft = Math.round((end - new Date(ymd(new Date()))) / 86400000);
   const active = db.players.filter((p) => p.status === 'Активен');
   const payments = active.map((p) => {
-    const paid = [...db.journal].reverse().find((j) => j.id === p.id && j.date.startsWith(month) && j.status === 'Оплачен');
+    const mine = db.journal.filter((j) => j.id === p.id && j.date.startsWith(month) && j.status === 'Оплачен');
+    // Разовые оплаты не делают игрока «оплатившим месяц» — как в таблице.
+    const paid = [...mine].reverse().find((j) => j.abonement !== 'Разовая');
+    const once = mine.filter((j) => j.abonement === 'Разовая');
+    const status = paid ? 'Оплачен' : once.length ? 'Разовые' : 'Не оплачен';
     return {
-      id: p.id, fio: p.fio, group: p.group, period: month, status: paid ? 'Оплачен' : 'Не оплачен',
+      id: p.id, fio: p.fio, group: p.group, period: month, status,
       date: paid ? fmt(paid.date, 'dd.MM.yyyy') : '', amount: paid ? paid.amount : null, method: paid?.method || '',
       abonement: paid?.abonement || '', until: paid ? fmt(end, 'dd.MM.yyyy') : '', daysLeft: paid ? daysLeft : null,
-      reminder: !paid ? '⚠ Не оплачен' : daysLeft <= 5 ? `⚠ Через ${daysLeft} дн.` : '',
+      reminder: status === 'Не оплачен' ? '⚠ Не оплачен' : paid && daysLeft <= 5 ? `⚠ Через ${daysLeft} дн.` : '',
+      oneOff: once.length ? { count: once.length, last: fmt(once.map((j) => j.date).sort().pop(), 'dd.MM.yyyy') } : null,
     };
   });
   const paidN = payments.filter((p) => p.status === 'Оплачен').length;
@@ -120,7 +130,7 @@ function demoSummary(db) {
     kpi: {
       active: active.length, junior: active.filter((p) => p.group === 'Junior').length,
       adults: active.filter((p) => p.group === 'Взрослые').length, paused: db.players.filter((p) => p.status === 'Пауза').length,
-      paid: paidN, unpaid: payments.length - paidN, revenue, alerts: payments.filter((p) => p.reminder).length,
+      paid: paidN, unpaid: payments.filter((p) => p.status === 'Не оплачен').length, oneOff: payments.filter((p) => p.status === 'Разовые').length, revenue, alerts: payments.filter((p) => p.reminder).length,
       newLeads: db.leads.filter((l) => l.status === 'Новая').length, trials: db.leads.filter((l) => l.status === 'Пробная назначена').length,
       attJunior: 0.82, attAdults: 0.7,
     },
@@ -152,7 +162,11 @@ function demoClub(action, p) {
       return {
         exists: Boolean(db.attendance[key]),
         players: db.players.filter((x) => x.group === p.group && x.status === 'Активен')
-          .map((x) => ({ id: x.id, fio: x.fio, pay: demoSummary(db).payments.find((y) => y.id === x.id)?.status || '', mark: marks[x.id] || '' })),
+          .map((x) => ({
+            id: x.id, fio: x.fio, mark: marks[x.id] || '',
+            pay: db.journal.some((j) => j.id === x.id && j.date === p.date && j.abonement === 'Разовая' && j.status === 'Оплачен')
+              ? 'Разовая оплачена' : demoSummary(db).payments.find((y) => y.id === x.id)?.status || '',
+          })),
       };
     }
     case 'attSet': {

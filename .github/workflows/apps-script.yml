@@ -1,0 +1,54 @@
+# Автовыкладка Apps Script: при изменении backend/apps-script/Code.gs в main
+# код попадает в файл APEX_Hub проекта таблицы, и веб-приложение обновляется на том же адресе.
+# Другие файлы проекта (например, Код.gs с onEdit) не трогаются: перед выкладкой они скачиваются как есть.
+# Нужны: секрет CLASPRC_JSON (содержимое .clasprc.json после `clasp login`) и переменная APPS_SCRIPT_ID.
+name: Deploy Apps Script
+on:
+  push:
+    branches: [main]
+    paths: ['backend/apps-script/Code.gs', '.github/workflows/apps-script.yml']
+  workflow_dispatch:
+concurrency: { group: apps-script, cancel-in-progress: false }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check settings
+        id: cfg
+        env:
+          CLASPRC: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ vars.APPS_SCRIPT_ID }}
+        run: |
+          if [ -z "$CLASPRC" ] || [ -z "$SCRIPT_ID" ]; then
+            echo "::notice::Автовыкладка Apps Script не настроена: добавьте секрет CLASPRC_JSON и переменную APPS_SCRIPT_ID."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ok == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.ok == 'true'
+        with: { node-version: 22 }
+      - name: Push code and update the web app
+        if: steps.cfg.outputs.ok == 'true'
+        env:
+          CLASPRC: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ vars.APPS_SCRIPT_ID }}
+          WEBAPP_URL: ${{ vars.VITE_APPS_SCRIPT_URL }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$CLASPRC" > ~/.clasprc.json
+          npm i -g @google/clasp@3.4.1 >/dev/null
+          mkdir -p /tmp/gas && cd /tmp/gas
+          printf '{"scriptId":"%s"}' "$SCRIPT_ID" > .clasp.json
+          clasp pull
+          echo "Файлы проекта Apps Script:"; ls -1
+          target=$(ls | grep -E '^APEX_Hub\.(js|gs)$' | head -1 || true)
+          if [ -z "$target" ]; then echo "::error::В проекте Apps Script нет файла APEX_Hub"; exit 1; fi
+          cp "$GITHUB_WORKSPACE/backend/apps-script/Code.gs" "$target"
+          clasp push --force
+          DEP_ID=$(printf '%s' "$WEBAPP_URL" | sed -nE 's#.*/macros/s/([^/]+)/exec.*#\1#p')
+          if [ -z "$DEP_ID" ]; then echo "::error::Не удалось взять ID развёртывания из переменной VITE_APPS_SCRIPT_URL"; exit 1; fi
+          clasp update-deployment "$DEP_ID" -d "APEX Hub · ${GITHUB_SHA::7}"
+          rm -f ~/.clasprc.json

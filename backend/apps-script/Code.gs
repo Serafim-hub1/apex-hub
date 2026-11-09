@@ -3,9 +3,11 @@
  *
  * Что делает:
  *  1) Мост «приложение ⇄ Google-таблица клуба»: оплаты, посещаемость, заявки (doPost).
- *  2) Каждые 5 минут (tick): напоминания о задачах и событиях, уведомления о назначениях,
+ *  2) Каждые 5 минут (apexTick): напоминания о задачах и событиях, уведомления о назначениях,
  *     утренний список задач — через Firebase Cloud Messaging (+ Telegram по желанию).
  *  3) Данные для виджета на iPhone (doGet?action=widget&key=…).
+ *  4) Каждую ночь около 03:00 (apexBackup): копия задач, событий и страниц в JSON на Google Диск,
+ *     папка «APEX Hub — бэкапы», хранятся последние 30 дней.
  *
  * Настройки — в «Параметры проекта → Свойства скрипта» (Script properties):
  *   FIREBASE_API_KEY        Web API key из Firebase (тот же, что VITE_FIREBASE_API_KEY)
@@ -14,10 +16,20 @@
  *   SPREADSHEET_ID          ID таблицы (не нужен, если скрипт создан из самой таблицы: Расширения → Apps Script)
  *   TELEGRAM_BOT_TOKEN      необязательно: токен бота от @BotFather для дублирования уведомлений
  *
- * После вставки кода: выполните функцию setup() один раз (выдаст разрешения и создаст триггер),
+ * После вставки кода: выполните функцию apexSetup() один раз (выдаст разрешения и создаст триггер),
  * затем «Начать развертывание → Новое развертывание → Веб-приложение»: запуск от моего имени, доступ «Все».
  */
 
+// Весь код APEX Hub спрятан внутри APEX_HUB, чтобы не пересекаться с другими скриптами таблицы
+// (например, с onEdit для «Реестра ID»). Снаружи видны только функции ниже.
+
+function doPost(e) { return APEX_HUB.doPost(e); }
+function doGet(e) { return APEX_HUB.doGet(e); }
+function apexSetup() { return APEX_HUB.setup(); }
+function apexTick() { return APEX_HUB.tick(); }
+function apexBackup() { return APEX_HUB.backup(); }
+
+var APEX_HUB = (function () {
 const TZ = 'Europe/Moscow';
 const SHEETS = {
   players: 'Игроки', payments: 'Оплаты', journal: 'Журнал оплат', leads: 'Заявки', lists: 'Справочники',
@@ -26,7 +38,7 @@ const SHEETS = {
 
 /* ───────────────────────── входные точки ───────────────────────── */
 
-function doPost(e) {
+function doPost_(e) {
   try {
     const body = JSON.parse(e.postData.contents || '{}');
     const email = verifyUser_(body.idToken);
@@ -38,7 +50,7 @@ function doPost(e) {
   }
 }
 
-function doGet(e) {
+function doGet_(e) {
   try {
     const p = e.parameter || {};
     if (p.action === 'widget') return json_({ ok: true, data: widget_(p.key) });
@@ -61,9 +73,12 @@ const ACTIONS = {
 };
 
 /** Однократная настройка: разрешения + триггер каждые 5 минут. */
-function setup() {
-  ScriptApp.getProjectTriggers().forEach((t) => { if (t.getHandlerFunction() === 'tick') ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('tick').timeBased().everyMinutes(5).create();
+function setup_() {
+  ScriptApp.getProjectTriggers().forEach((t) => { if (t.getHandlerFunction() === 'apexTick') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('apexTick').timeBased().everyMinutes(5).create();
+  ScriptApp.getProjectTriggers().forEach((t) => { if (t.getHandlerFunction() === 'apexBackup') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('apexBackup').timeBased().everyDays(1).atHour(3).create();
+  Logger.log('Бэкап: каждую ночь около 03:00, папка на Диске «%s»', backupFolder_().getName());
   ss_().getName();
   const sa = serviceAccount_();
   Logger.log('Готово. Таблица: %s. Firebase-проект: %s', ss_().getName(), sa.project_id);
@@ -116,11 +131,12 @@ function verifyUser_(idToken) {
 
 /* ───────────────────────── помощники таблицы ───────────────────────── */
 
+const isDate_ = (v) => Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime());
 const ymd_ = (d) => Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
 const dmy_ = (d) => Utilities.formatDate(d, TZ, 'dd.MM.yyyy');
 const thisMonth_ = () => Utilities.formatDate(new Date(), TZ, 'yyyy-MM');
 const num_ = (v) => (typeof v === 'number' ? v : Number(String(v).replace(/[^\d,.-]/g, '').replace(',', '.')) || 0);
-const asYmd_ = (v) => (v instanceof Date ? ymd_(v) : /^\d{2}\.\d{2}\.\d{4}$/.test(String(v)) ? String(v).split('.').reverse().join('-') : String(v || ''));
+const asYmd_ = (v) => (isDate_(v) ? ymd_(v) : /^\d{2}\.\d{2}\.\d{4}$/.test(String(v)) ? String(v).split('.').reverse().join('-') : String(v || ''));
 function parseYmd_(s) { const p = String(s).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); }
 function firstEmptyRow_(sh, col) {
   const last = Math.max(sh.getLastRow(), 2);
@@ -138,7 +154,7 @@ function column_(sh, idx) { // idx с 1
 function activePlayers_() {
   const v = sheet_(SHEETS.players).getDataRange().getValues().slice(1);
   return v.filter((r) => r[1] !== '').map((r) => ({
-    id: String(r[0]), fio: String(r[1]).trim(), group: String(r[2]), status: String(r[10] || 'Активен'),
+    id: String(r[0]), fio: String(r[1]).trim(), raw: String(r[1]), group: String(r[2]), status: String(r[10] || 'Активен'),
     phone: String(r[5] || ''), parent: String(r[6] || ''), parentPhone: String(r[7] || ''),
   }));
 }
@@ -159,14 +175,21 @@ function summary_() {
   const players = activePlayers_();
   const active = players.filter((p) => p.status !== 'Пауза' && p.status !== 'Выбыл');
   const month = thisMonth_();
-  const jv = sheet_(SHEETS.journal).getDataRange().getValues().slice(1);
   let revenue = 0;
-  jv.forEach((r) => {
-    const period = r[5] instanceof Date ? Utilities.formatDate(r[5], TZ, 'yyyy-MM') : String(r[2]);
-    if (period !== month) return;
+  const oneOff = {}; // ID игрока → { count, last } — разовые оплаты в этом месяце
+  journalRows_().forEach((r) => {
+    if (periodOf_(r) !== month) return;
     if (r[7] === 'Оплачен') revenue += num_(r[6]);
     if (r[7] === 'Возврат') revenue -= num_(r[6]);
+    if (r[7] === 'Оплачен' && isOneOff_(r)) {
+      const id = String(r[1]);
+      const d = isDate_(r[5]) ? dmy_(r[5]) : String(r[5]);
+      const o = oneOff[id] || (oneOff[id] = { count: 0, last: '' });
+      o.count++;
+      if (!o.last || d.split('.').reverse().join('') > o.last.split('.').reverse().join('')) o.last = d;
+    }
   });
+  payments.forEach((p) => { p.oneOff = oneOff[p.id] || null; });
   const leadStatuses = column_(sheet_(SHEETS.leads), 7);
   const league = [];
   SHEETS.leagues.forEach((name) => {
@@ -185,7 +208,8 @@ function summary_() {
       adults: active.filter((p) => p.group === 'Взрослые').length,
       paused: players.filter((p) => p.status === 'Пауза').length,
       paid: payments.filter((p) => p.status === 'Оплачен').length,
-      unpaid: payments.filter((p) => p.status !== 'Оплачен').length,
+      unpaid: payments.filter((p) => p.status === 'Не оплачен').length,
+      oneOff: payments.filter((p) => p.status === 'Разовые').length,
       revenue: revenue,
       alerts: payments.filter((p) => p.reminder).length,
       newLeads: leadStatuses.filter((s) => s === 'Новая').length,
@@ -208,26 +232,30 @@ function players_() {
   };
 }
 
+/** Строки «Журнала оплат», где заполнено ФИО (колонка D).
+ *  getLastRow() здесь не годится: формулы ARRAYFORMULA в A–E «занимают» весь лист до конца. */
+function journalRows_() {
+  return sheet_(SHEETS.journal).getDataRange().getValues().slice(1).filter((r) => String(r[3]).trim() !== '');
+}
+const periodOf_ = (r) => (isDate_(r[5]) ? Utilities.formatDate(r[5], TZ, 'yyyy-MM') : String(r[2]));
+const isOneOff_ = (r) => String(r[9]).trim() === 'Разовая';
+
 function payRecent_() {
-  const sh = sheet_(SHEETS.journal);
-  const last = sh.getLastRow();
-  if (last < 2) return [];
-  const from = Math.max(2, last - 40);
-  const vals = sh.getRange(from, 1, last - from + 1, 11).getValues();
-  return vals.filter((r) => r[3]).reverse().slice(0, 15).map((r) => ({
+  return journalRows_().reverse().slice(0, 15).map((r) => ({
     payId: String(r[0]), id: String(r[1]), fio: String(r[3]), group: String(r[4]),
-    date: r[5] instanceof Date ? dmy_(r[5]) : String(r[5]), amount: num_(r[6]), status: String(r[7]),
+    date: isDate_(r[5]) ? dmy_(r[5]) : String(r[5]), amount: num_(r[6]), status: String(r[7]),
     method: String(r[8]), abonement: String(r[9]), comment: String(r[10] || ''),
   }));
 }
 
 function payAdd_(pay) {
   if (!pay || !pay.fio) throw new Error('Не указан игрок');
-  const known = activePlayers_().some((p) => p.fio === String(pay.fio).trim());
-  if (!known) throw new Error('Игрока «' + pay.fio + '» нет на листе «Игроки»');
+  const player = activePlayers_().filter((p) => p.fio === String(pay.fio).trim())[0];
+  if (!player) throw new Error('Игрока «' + pay.fio + '» нет на листе «Игроки»');
   const sh = sheet_(SHEETS.journal);
   const row = firstEmptyRow_(sh, 4); // колонка D — ФИО; A, B, C, E заполняют формулы
-  sh.getRange(row, 4).setValue(String(pay.fio).trim());
+  // Пишем имя ровно как на листе «Игроки» (с пробелами, если они там есть), иначе формулы не найдут ID.
+  sh.getRange(row, 4).setValue(player.raw);
   sh.getRange(row, 6, 1, 6).setValues([[
     parseYmd_(pay.date), Number(pay.amount) || 0, pay.status || 'Оплачен', pay.method || 'Перевод', pay.abonement || '', pay.comment || '',
   ]]);
@@ -241,7 +269,7 @@ function dateCol_(headers, dateStr) {
   const d = parseYmd_(dateStr);
   for (let c = 3; c < headers.length; c++) {
     const h = headers[c];
-    if (h instanceof Date) { if (h.getDate() === d.getDate() && h.getMonth() === d.getMonth()) return c; continue; }
+    if (isDate_(h)) { if (h.getDate() === d.getDate() && h.getMonth() === d.getMonth()) return c; continue; }
     const m = String(h).trim().match(/^(\d{1,2})\.(\d{1,2})/);
     if (m && Number(m[1]) === d.getDate() && Number(m[2]) === d.getMonth() + 1) return c;
   }
@@ -252,10 +280,16 @@ function attGet_(group, date) {
   const sh = sheet_(SHEETS.attendance(group));
   const v = sh.getDataRange().getValues();
   const c = dateCol_(v[0], date);
+  // Кто оплатил разовое занятие именно на эту дату
+  const paidThatDay = {};
+  journalRows_().forEach((r) => {
+    if (r[7] === 'Оплачен' && isOneOff_(r) && isDate_(r[5]) && ymd_(r[5]) === date) paidThatDay[String(r[1])] = true;
+  });
   return {
     exists: c >= 0,
     players: v.slice(1).filter((r) => r[0] && r[1]).map((r) => ({
-      id: String(r[0]), fio: String(r[1]), pay: String(r[2] || ''), mark: c >= 0 ? String(r[c] || '') : '',
+      id: String(r[0]), fio: String(r[1]), mark: c >= 0 ? String(r[c] || '') : '',
+      pay: paidThatDay[String(r[0])] ? 'Разовая оплачена' : String(r[2] || ''),
     })),
   };
 }
@@ -425,7 +459,7 @@ const esc_ = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').repla
 
 /* ───────────────────────── планировщик (каждые 5 минут) ───────────────────────── */
 
-function tick() {
+function tick_() {
   const nowIso = new Date().toISOString();
   const users = fsList_('users');
   const byId = {};
@@ -499,6 +533,44 @@ function humanDate_(s) {
   return Utilities.formatDate(parseYmd_(s), TZ, 'dd.MM');
 }
 
+/* ───────────────────────── ночной бэкап на Google Диск ───────────────────────── */
+
+const BACKUP_COLLECTIONS = ['users', 'tasks', 'events', 'notes'];
+const BACKUP_KEEP_DAYS = 30;
+
+function backupFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('BACKUP_FOLDER_ID');
+  if (id) {
+    try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) { /* папку удалили — создадим заново */ }
+  }
+  const name = 'APEX Hub — бэкапы';
+  const it = DriveApp.getFoldersByName(name);
+  const folder = it.hasNext() ? it.next() : DriveApp.createFolder(name);
+  props.setProperty('BACKUP_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+/** Выгружает задачи, события, страницы и профили в JSON и удаляет копии старше 30 дней. */
+function backup_() {
+  const data = { createdAt: new Date().toISOString(), project: serviceAccount_().project_id, version: 1 };
+  const counts = {};
+  BACKUP_COLLECTIONS.forEach((c) => { data[c] = fsList_(c); counts[c] = data[c].length; });
+  const folder = backupFolder_();
+  const name = 'apex-backup-' + Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd_HH-mm') + '.json';
+  folder.createFile(name, JSON.stringify(data, null, 1), 'application/json');
+
+  const cutoff = Date.now() - BACKUP_KEEP_DAYS * 86400000;
+  let removed = 0;
+  const files = folder.getFiles();
+  while (files.hasNext()) {
+    const f = files.next();
+    if (f.getName().indexOf('apex-backup-') === 0 && f.getDateCreated().getTime() < cutoff) { f.setTrashed(true); removed++; }
+  }
+  Logger.log('Бэкап сохранён: %s. Записей: %s. Удалено старых копий: %s', name, JSON.stringify(counts), removed);
+  return { file: name, counts: counts, removed: removed };
+}
+
 /* ───────────────────────── виджет ───────────────────────── */
 
 function widget_(key) {
@@ -520,3 +592,9 @@ function widget_(key) {
     next: next ? { title: next.title, date: next.date, start: next.start || '', when: humanDate_(next.date) } : null,
   };
 }
+
+return {
+  doPost: doPost_, doGet: doGet_, setup: setup_, tick: tick_, backup: backup_,
+  _test: { summary_: summary_, players_: players_, payRecent_: payRecent_, payAdd_: payAdd_, attGet_: attGet_, attSet_: attSet_, leads_: leads_, leadAdd_: leadAdd_ },
+};
+})();
