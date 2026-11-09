@@ -6,6 +6,20 @@ import { clubCall, clubConfigured, readCache, reminderText, DEFAULT_LISTS, PRICE
 import { Modal, ModalHead, Empty, TitleArea, useToast } from '../components/ui';
 import { todayStr, fmt, humanDay } from '../lib/dates';
 
+const STATUS_ORDER = { 'Не оплачен': 0, 'Разовые': 1, 'Оплачен': 2 };
+
+/** Пилюля статуса оплаты: красная — нет оплаты, нейтральная — разовые, зелёная — абонемент. */
+export function PayPill({ p }) {
+  if (p.status === 'Оплачен') {
+    return <span className={`pill ${p.reminder ? 'warn' : 'ok'}`}><span className="pdot" />{p.reminder ? reminderText(p.reminder) : 'Оплачен'}</span>;
+  }
+  if (p.status === 'Разовые') {
+    const o = p.oneOff;
+    return <span className="pill"><span className="pdot" />Разовые{o ? ` · ${o.count}` : ''}</span>;
+  }
+  return <span className="pill bad"><span className="pdot" />{p.status || 'Не оплачен'}</span>;
+}
+
 const rub = (n) => (n === null || n === undefined || n === '' ? '—' : `${Number(n).toLocaleString('ru-RU')} ₽`);
 
 function useClub(action, payload) {
@@ -66,11 +80,12 @@ function Payments({ openAdd }) {
   const list = useMemo(() => (s?.payments || []).filter((p) => {
     if (g && p.group !== g) return false;
     if (q && !p.fio.toLowerCase().includes(q.toLowerCase())) return false;
-    if (f === 'unpaid') return p.status !== 'Оплачен';
+    if (f === 'unpaid') return p.status === 'Не оплачен';
+    if (f === 'oneoff') return p.status === 'Разовые';
     if (f === 'soon') return p.status === 'Оплачен' && p.reminder;
     if (f === 'paid') return p.status === 'Оплачен';
     return true;
-  }).sort((a, b) => (a.status === b.status ? a.fio.localeCompare(b.fio, 'ru') : a.status === 'Оплачен' ? 1 : -1)), [s, f, g, q]);
+  }).sort((a, b) => (STATUS_ORDER[a.status] ?? 1) - (STATUS_ORDER[b.status] ?? 1) || a.fio.localeCompare(b.fio, 'ru')), [s, f, g, q]);
 
   const reload = () => { sum.reload(); recent.reload(); };
 
@@ -80,7 +95,7 @@ function Payments({ openAdd }) {
       <div className="kpis">
         <div className="kpi"><b>{s ? s.kpi.active : '—'}</b><span>активных игроков</span></div>
         <div className="kpi hot"><b>{s ? s.kpi.paid : '—'}</b><span>оплатили за {s ? fmt(s.month + '-01', 'LLLL') : 'месяц'}</span></div>
-        <div className={`kpi ${s?.kpi.unpaid ? 'bad' : ''}`}><b>{s ? s.kpi.unpaid : '—'}</b><span>ещё не оплатили</span></div>
+        <div className={`kpi ${s?.kpi.unpaid ? 'bad' : ''}`}><b>{s ? s.kpi.unpaid : '—'}</b><span>не оплатили{s?.kpi.oneOff ? ` · ещё ${s.kpi.oneOff} на разовых` : ''}</span></div>
         <div className="kpi"><b className="num">{s ? `${Math.round(s.kpi.revenue / 100) / 10}к` : '—'}</b><span>₽ выручка месяца</span></div>
       </div>
 
@@ -95,7 +110,7 @@ function Payments({ openAdd }) {
         <div className="panel-b">
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
             <div className="chips">
-              {[['all', 'Все'], ['unpaid', 'Не оплатили'], ['soon', 'Скоро заканчивается'], ['paid', 'Оплатили']].map(([k, l]) => (
+              {[['all', 'Все'], ['unpaid', 'Не оплатили'], ['oneoff', 'Разовые'], ['soon', 'Скоро заканчивается'], ['paid', 'Оплатили']].map(([k, l]) => (
                 <button key={k} className={`chip ${f === k ? 'on' : ''}`} onClick={() => setF(k)}>{l}</button>
               ))}
               {DEFAULT_LISTS.groups.map((x) => <button key={x} className={`chip ${g === x ? 'on' : ''}`} onClick={() => setG(g === x ? '' : x)}>{x}</button>)}
@@ -108,13 +123,18 @@ function Payments({ openAdd }) {
           {!s && sum.busy && [1, 2, 3, 4].map((i) => <div key={i} className="skel" style={{ margin: '16px 0', width: `${90 - i * 10}%` }} />)}
           {s && list.length === 0 && <Empty>По этому фильтру никого.</Empty>}
           {list.map((p) => (
-            <div key={p.id} className="prow" onClick={() => setForm({ fio: p.fio, abonement: p.abonement })} style={{ cursor: 'pointer' }}>
+            <div key={p.id} className="prow" onClick={() => setForm({ fio: p.fio, abonement: p.status === 'Разовые' ? 'Разовая' : p.abonement })} style={{ cursor: 'pointer' }}>
               <div style={{ minWidth: 0 }}>
                 <div className="n">{p.fio}</div>
-                <div className="s">{p.group}{p.abonement ? ` · ${p.abonement}` : ''}{p.date ? ` · оплата ${p.date}` : ''}</div>
+                <div className="s">
+                  {p.group}
+                  {p.status === 'Разовые' && p.oneOff ? ` · разовых в этом месяце: ${p.oneOff.count}, последнее ${p.oneOff.last}` : ''}
+                  {p.status === 'Оплачен' && p.abonement ? ` · ${p.abonement}` : ''}
+                  {p.status === 'Оплачен' && p.date ? ` · оплата ${p.date}` : ''}
+                </div>
               </div>
               <div style={{ display: 'grid', justifyItems: 'end', gap: 3 }}>
-                <span className={`pill ${p.status === 'Оплачен' ? (p.reminder ? 'warn' : 'ok') : 'bad'}`}><span className="pdot" />{p.status === 'Оплачен' && p.reminder ? reminderText(p.reminder) : p.status}</span>
+                <PayPill p={p} />
                 {p.amount ? <span className="s num">{rub(p.amount)}</span> : null}
               </div>
             </div>
@@ -146,31 +166,98 @@ function Payments({ openAdd }) {
         </section>
       </div>
 
-      {form && <PayForm initial={form} onClose={() => setForm(null)} onSaved={reload} />}
+      {form && <PayForm initial={form} onClose={() => setForm(null)} onSaved={reload} payments={s?.payments || []} />}
     </>
   );
 }
 
-function PayForm({ initial, onClose, onSaved }) {
+const normName = (x) => String(x || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
+/** Цена по умолчанию: у взрослых разовое занятие дороже. Сумму всегда можно поправить вручную. */
+const priceFor = (ab, group) => (ab === 'Разовая' && group === 'Взрослые' ? 2600 : PRICES[ab]);
+
+/* Выбор игрока: поиск + список. Обычный <datalist> на iPhone почти не работает, поэтому свой список. */
+function PlayerPicker({ players, loading, value, onChange, statusById }) {
+  const [q, setQ] = useState('');
+  const [editing, setEditing] = useState(false);
+  const matches = useMemo(() => {
+    const n = normName(q);
+    return players.filter((p) => !n || normName(p.fio).includes(n)).slice(0, n ? 30 : 100);
+  }, [q, players]);
+
+  if (value && !editing) {
+    const st = statusById[value.id];
+    return (
+      <div className="picked">
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <b>{value.fio}</b>
+          <span>{value.group}{st ? ` · ${st.status === 'Разовые' && st.oneOff ? `разовых: ${st.oneOff.count}` : st.status}` : ''}</span>
+        </div>
+        <button type="button" className="btn sm" onClick={() => { setEditing(true); setQ(''); }}>Сменить</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="search-box" style={{ maxWidth: 'none', margin: 0 }}>
+        <Search size={15} />
+        <input id="pay-fio" className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Фамилия или имя" autoComplete="off" />
+      </div>
+      <div className="picker-list" role="listbox" aria-label="Игроки">
+        {loading && !players.length && [1, 2, 3].map((i) => <div key={i} className="skel" style={{ margin: 12, width: '60%' }} />)}
+        {!loading && !matches.length && <div className="empty" style={{ padding: 14 }}>Никого не нашли</div>}
+        {matches.map((p) => {
+          const st = statusById[p.id];
+          return (
+            <button type="button" key={p.id} className="picker-item" role="option" aria-selected={value?.id === p.id}
+              onClick={() => { onChange(p); setEditing(false); }}>
+              <span className="n">{p.fio}</span>
+              <span className="s">{p.group}</span>
+              {st && <PayPill p={st} />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PayForm({ initial, onClose, onSaved, payments = [] }) {
   const { getIdToken } = useStore();
   const toast = useToast();
   const pl = useClub('players');
   const lists = { ...DEFAULT_LISTS, ...(pl.data?.lists || {}) };
-  const players = (pl.data?.players || []).filter((p) => p.status !== 'Выбыл');
+  const players = useMemo(() => (pl.data?.players || []).filter((p) => p.status !== 'Выбыл')
+    .sort((a, b) => a.fio.localeCompare(b.fio, 'ru')), [pl.data]);
+  const statusById = useMemo(() => Object.fromEntries(payments.map((p) => [p.id, p])), [payments]);
+  const startAb = initial.abonement || '2 раза/нед.';
+  const [player, setPlayer] = useState(null);
   const [d, setD] = useState({
-    fio: initial.fio || '', date: todayStr(), abonement: initial.abonement || '2 раза/нед.',
-    amount: PRICES[initial.abonement || '2 раза/нед.'] || '', method: 'Перевод', status: 'Оплачен', comment: '',
+    date: todayStr(), abonement: startAb, amount: PRICES[startAb] || '',
+    method: 'Перевод', status: 'Оплачен', comment: '',
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const set = (p) => setD((x) => ({ ...x, ...p }));
-  const known = players.some((p) => p.fio === d.fio);
+
+  // Если форму открыли из строки игрока — подставляем его, когда загрузится список.
+  useEffect(() => {
+    if (player || !initial.fio || !players.length) return;
+    const p = players.find((x) => normName(x.fio) === normName(initial.fio));
+    if (p) { setPlayer(p); set({ amount: priceFor(d.abonement, p.group) ?? d.amount }); }
+  }, [players]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pick = (p) => {
+    setPlayer(p);
+    const st = statusById[p.id];
+    const ab = st?.status === 'Разовые' ? 'Разовая' : d.abonement;
+    set({ abonement: ab, amount: priceFor(ab, p.group) ?? d.amount });
+  };
 
   const save = async () => {
     setBusy(true); setErr('');
     try {
-      await clubCall('payAdd', { pay: { ...d, amount: Number(d.amount) } }, getIdToken);
-      toast(`Оплата ${d.fio.split(' ')[0]} записана в таблицу`);
+      await clubCall('payAdd', { pay: { ...d, fio: player.fio, amount: Number(d.amount) } }, getIdToken);
+      toast(`Оплата ${player.fio.split(' ')[0]} записана в таблицу`);
       onSaved(); onClose();
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
@@ -181,16 +268,15 @@ function PayForm({ initial, onClose, onSaved }) {
       <div className="modal-b">
         <h2 className="h2" style={{ fontSize: 24 }}>Внести оплату</h2>
         <div className="field">
-          <label htmlFor="pay-fio">Игрок</label>
-          <input id="pay-fio" className="input" list="players-list" value={d.fio} onChange={(e) => set({ fio: e.target.value })} placeholder="Начните вводить фамилию" autoComplete="off" />
-          <datalist id="players-list">{players.map((p) => <option key={p.id} value={p.fio}>{p.group}</option>)}</datalist>
-          {d.fio && !known && pl.data && <span className="err" style={{ fontWeight: 500 }}>Такого игрока нет на листе «Игроки» — таблица не примет запись. Выберите из списка.</span>}
+          <span className="lbl">Игрок</span>
+          <PlayerPicker players={players} loading={pl.busy} value={player} onChange={pick} statusById={statusById} />
+          {pl.err && <span className="err">{pl.err}</span>}
         </div>
         <div className="grid2">
-          <div className="field"><label htmlFor="pay-date">Дата оплаты</label><input id="pay-date" type="date" className="input" value={d.date} onChange={(e) => set({ date: e.target.value })} /></div>
+          <div className="field"><label htmlFor="pay-date">{d.abonement === 'Разовая' ? 'Дата занятия' : 'Дата оплаты'}</label><input id="pay-date" type="date" className="input" value={d.date} onChange={(e) => set({ date: e.target.value })} /></div>
           <div className="field">
             <label htmlFor="pay-ab">Абонемент</label>
-            <select id="pay-ab" className="select" value={d.abonement} onChange={(e) => set({ abonement: e.target.value, amount: PRICES[e.target.value] ?? d.amount })}>
+            <select id="pay-ab" className="select" value={d.abonement} onChange={(e) => set({ abonement: e.target.value, amount: priceFor(e.target.value, player?.group) ?? d.amount })}>
               {lists.abonements.map((a) => <option key={a}>{a}</option>)}
             </select>
           </div>
@@ -209,7 +295,7 @@ function PayForm({ initial, onClose, onSaved }) {
       </div>
       <div className="modal-f">
         <button className="btn ghost" onClick={onClose}>Отмена</button>
-        <button className="btn primary" onClick={save} disabled={busy || !known || !d.amount}>{busy ? 'Записываем…' : 'Записать в таблицу'}</button>
+        <button className="btn primary" onClick={save} disabled={busy || !player || !d.amount}>{busy ? 'Записываем…' : 'Записать в таблицу'}</button>
       </div>
     </Modal>
   );
@@ -265,7 +351,9 @@ function Attendance() {
           <div key={p.id} className="att-row">
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.fio}</div>
-              {p.pay && p.pay !== 'Оплачен' && <span className="pill bad" style={{ marginTop: 3 }}>{p.pay}</span>}
+              {p.pay === 'Разовая оплачена' && <span className="pill ok" style={{ marginTop: 3 }}>Разовая оплачена</span>}
+              {p.pay === 'Разовые' && <span className="pill" style={{ marginTop: 3 }}>Разовые</span>}
+              {p.pay === 'Не оплачен' && <span className="pill bad" style={{ marginTop: 3 }}>Не оплачен</span>}
             </div>
             <div className="att-btns" role="group" aria-label={`Отметка: ${p.fio}`}>
               {[['✓', 'y', 'Был'], ['✕', 'n', 'Не был'], ['У', 'u', 'Уважительная причина']].map(([m, c, title]) => (
