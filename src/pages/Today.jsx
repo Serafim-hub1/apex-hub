@@ -6,7 +6,8 @@ import { useEditors } from '../components/Layout';
 import { TaskRow, QuickAdd } from '../components/Tasks';
 import { typeLabel } from '../components/EventEditor';
 import { Avatar, Empty } from '../components/ui';
-import { Peak, Topo } from '../components/Brand';
+import { Peak } from '../components/Brand';
+import { CountUp, Words } from '../components/motion';
 import { todayStr, ymd, addDays, fmt, greeting, humanDay } from '../lib/dates';
 import { clubCall, clubConfigured, readCache, reminderText } from '../lib/club';
 
@@ -54,17 +55,19 @@ export default function Today() {
   return (
     <div className="page">
       <section className="hero">
-        <Topo />
-        <Peak />
-        <div className="hero-in">
-          <span className="eyebrow acc">{fmt(new Date(), 'EEEE, d MMMM')}</span>
-          <h1 className="h1">{greeting()},<br /><em>{profile?.name || 'команда'}</em></h1>
-          <div className="stats">
-            <div className="stat hot"><b>{dueToday.length}</b><span>на сегодня</span></div>
-            <div className={`stat ${overdue.length ? 'bad' : ''}`}><b>{overdue.length}</b><span>просрочено</span></div>
-            <div className="stat"><b>{todayEvents.length}</b><span>{todayEvents.length === 1 ? 'событие' : 'событий'} сегодня</span></div>
-            <div className="stat"><b>{doneToday.length}</b><span>закрыто сегодня</span></div>
+        <div className="hero-top">
+          <Peak />
+          <div className="hero-in">
+            <span className="eyebrow acc">{fmt(new Date(), 'EEEE, d MMMM')}</span>
+            <h1 className="h1"><Words text={`${greeting()},`} /><br /><em><Words text={profile?.name || 'команда'} delay={160} /></em></h1>
+            <i className="rule" />
           </div>
+        </div>
+        <div className="statbar">
+          <div className="stat hot"><b><CountUp value={dueToday.length} /></b><span>на сегодня</span></div>
+          <div className={`stat ${overdue.length ? 'bad' : ''}`}><b><CountUp value={overdue.length} /></b><span>просрочено</span></div>
+          <div className="stat"><b><CountUp value={todayEvents.length} /></b><span>{todayEvents.length === 1 ? 'событие' : 'событий'}</span></div>
+          <div className="stat"><b><CountUp value={doneToday.length} /></b><span>закрыто</span></div>
         </div>
       </section>
 

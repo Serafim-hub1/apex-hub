@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Lock } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { TEAM } from '../config';
-import { Peak, SummitMark, Topo } from '../components/Brand';
+import { Peak, SummitMark } from '../components/Brand';
 
 export default function Login() {
   const { signIn, demo } = useStore();
@@ -22,8 +22,6 @@ export default function Login() {
   return (
     <div className="login">
       <div className="login-art">
-        <Topo />
-        <Peak />
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, color: '#f5f6f4' }}>
           <SummitMark size={34} />
           <span style={{ display: 'grid' }}>
@@ -32,7 +30,7 @@ export default function Login() {
           </span>
         </div>
         <div className="big">Твоя вершина<br /><em>начинается здесь.</em></div>
-        <div className="tag">Задачи · календарь · оплаты · посещаемость</div>
+        <div className="tag"><Peak />Задачи · календарь · оплаты · посещаемость</div>
       </div>
       <div className="login-form">
         <form className="login-card" onSubmit={submit}>

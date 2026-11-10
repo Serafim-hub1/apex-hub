@@ -2,7 +2,7 @@ import { HashRouter, MemoryRouter, Navigate, Route, Routes } from 'react-router-
 import { EMBED } from './config';
 import { StoreProvider, useStore } from './lib/store';
 import { ToastProvider } from './components/ui';
-import { SummitMark } from './components/Brand';
+import { Splash } from './components/motion';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Today from './pages/Today';
@@ -12,9 +12,14 @@ import Club from './pages/Club';
 import Notes from './pages/Notes';
 import Settings from './pages/Settings';
 
+function Boot() {
+  const { auth } = useStore();
+  return <Splash ready={auth.status !== 'loading'} />;
+}
+
 function Gate() {
   const { auth } = useStore();
-  if (auth.status === 'loading') return <div className="splash"><SummitMark size={64} /></div>;
+  if (auth.status === 'loading') return null; // экран закрыт заставкой
   if (auth.status === 'error') return <div className="splash"><div className="banner warn">Не удалось запустить приложение: {auth.error}</div></div>;
   if (auth.status === 'out') return <Login />;
   return (
@@ -39,6 +44,7 @@ export default function App() {
     <StoreProvider>
       <ToastProvider>
         <Router><Gate /></Router>
+        <Boot />
       </ToastProvider>
     </StoreProvider>
   );

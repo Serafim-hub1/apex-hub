@@ -5,6 +5,7 @@ import { AREAS, PRIORITIES, REMINDERS, STATUSES } from '../config';
 import { dueLabel, daysFromToday } from '../lib/dates';
 import { parseQuick } from '../lib/quick';
 import { Avatar, AvatarStack, Confirm, Modal, ModalHead, Prio, TitleArea, useToast } from './ui';
+import { reduced } from './motion';
 
 export const areaLabel = (k) => AREAS.find((a) => a.key === k)?.label || '';
 export const statusLabel = (k) => STATUSES.find((a) => a.key === k)?.label || '';
@@ -25,15 +26,55 @@ export function TaskCheck({ task }) {
   const { updateTask } = useStore();
   const toast = useToast();
   const done = task.status === 'done';
+  // Отметка с откликом: галочка рисуется, строка мягко сворачивается, и только потом задача уходит в «готово».
+  const [closing, setClosing] = useState(false);
+  const btn = useRef(null);
+  const pending = useRef(null); // { run, timer } — отложенная запись
+  const finish = () => {
+    const p = pending.current;
+    if (!p) return;
+    pending.current = null;
+    clearTimeout(p.timer);
+    p.run();
+  };
+  useEffect(() => () => finish(), []); // ушли со страницы раньше — записать сразу
+  useEffect(() => { setClosing(false); }, [done]);
+
+  const complete = () => {
+    if (pending.current) return;
+    const prev = task.status;
+    const run = () => {
+      updateTask(task, { status: 'done' });
+      toast('Задача выполнена', { undo: () => updateTask({ ...task, status: 'done' }, { status: prev }) });
+    };
+    if (reduced()) { run(); return; }
+    setClosing(true);
+    const p = { run };
+    pending.current = p;
+    p.timer = setTimeout(() => {
+      const row = btn.current?.closest('.trow');
+      if (!row?.animate) { finish(); return; }
+      row.style.overflow = 'hidden';
+      const anim = row.animate(
+        [{ height: `${row.offsetHeight}px`, opacity: 1 }, { height: '0px', opacity: 0, paddingTop: 0, paddingBottom: 0, borderBottomWidth: 0 }],
+        { duration: 280, easing: 'cubic-bezier(0.65, 0, 0.35, 1)', fill: 'forwards' },
+      );
+      // Строку убирает React после записи; если она осталась на месте (фильтр показывает готовые) — вернуть вид.
+      const end = () => { finish(); setTimeout(() => { anim.cancel(); row.style.overflow = ''; }, 80); };
+      anim.onfinish = end;
+      p.timer = setTimeout(end, 400);
+    }, 380);
+  };
+
   return (
     <button
-      className={`check ${done ? 'on' : ''} ${task.priority === 'high' && !done ? 'high' : ''}`}
+      ref={btn}
+      className={`check ${done ? 'on' : ''} ${closing && !done ? 'closing' : ''} ${task.priority === 'high' && !done ? 'high' : ''}`}
       aria-label={done ? 'Вернуть в работу' : 'Отметить выполненной'}
       onClick={(e) => {
         e.stopPropagation();
-        const prev = task.status;
-        updateTask(task, { status: done ? 'todo' : 'done' });
-        if (!done) toast('Задача выполнена', { undo: () => updateTask({ ...task, status: 'done' }, { status: prev }) });
+        if (done) updateTask(task, { status: 'todo' });
+        else complete();
       }}
     >
       <Check size={13} strokeWidth={3.5} />
@@ -52,12 +93,17 @@ export function TaskRow({ task, onOpen, showArea = true }) {
       <div style={{ minWidth: 0 }}>
         <div className="tt">{task.title || 'Без названия'}</div>
         <div className="meta">
-          {task.dueDate && <span className={dc}>{dc === 'late' ? 'Просрочено · ' : ''}{dueLabel(task)}</span>}
+          {task.dueDate && (
+            <span className={dc} style={{ whiteSpace: 'nowrap' }}>
+              {dc === 'late' ? 'Просрочено · ' : ''}{dueLabel(task)}
+              {task.remindAt && <Bell size={12} aria-label="Есть напоминание" style={{ verticalAlign: -1, marginLeft: 6, color: 'var(--muted)' }} />}
+            </span>
+          )}
           {task.status === 'doing' && <span className="pill acc">В работе</span>}
           {task.status === 'review' && <span className="pill">На проверке</span>}
           {showArea && task.area && <span>{areaLabel(task.area)}</span>}
           {cl.length > 0 && <span><ListChecks size={12} style={{ verticalAlign: -1 }} /> {doneN}/{cl.length}</span>}
-          {task.remindAt && <Bell size={12} aria-label="Есть напоминание" />}
+          {task.remindAt && !task.dueDate && <Bell size={12} aria-label="Есть напоминание" />}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -5,6 +5,7 @@ import { useStore } from '../lib/store';
 import { clubCall, clubConfigured, readCache, reminderText, reminderMessage, payContact, phoneDigits, DEFAULT_LISTS, PRICES } from '../lib/club';
 import { Modal, ModalHead, Empty, TitleArea, Collapse, useToast } from '../components/ui';
 import { todayStr, fmt, humanDay } from '../lib/dates';
+import { CountUp } from '../components/motion';
 
 const STATUS_ORDER = { 'Не оплачен': 0, 'Оплачен': 2 };
 /** Группы списка абонементов. Важное открыто, остальное свёрнуто (выбор запоминается на устройстве).
@@ -101,11 +102,22 @@ function Payments({ openAdd }) {
   return (
     <>
       {sum.err && <div className="banner warn" style={{ marginBottom: 14 }}><AlertTriangle size={18} /><span className="grow">{sum.err}</span><button className="btn sm" onClick={reload}>Повторить</button></div>}
-      <div className="kpis">
-        <div className="kpi"><b>{s ? s.kpi.active : '—'}</b><span>активных игроков</span></div>
-        <div className="kpi hot"><b>{s ? s.kpi.paid : '—'}</b><span>оплатили за {s ? fmt(s.month + '-01', 'LLLL') : 'месяц'}</span></div>
-        <div className={`kpi ${s?.kpi.unpaid ? 'bad' : ''}`}><b>{s ? s.kpi.unpaid : '—'}</b><span>без абонемента{s?.kpi.oneOff ? ` · ${s.kpi.oneOff} ходят разово` : ''}</span></div>
-        <div className="kpi"><b className="num">{s ? `${Math.round(s.kpi.revenue / 100) / 10}к` : '—'}</b><span>₽ выручка месяца</span></div>
+      <div className="statbar" style={{ marginBottom: 16 }}>
+        <div className="stat"><b><CountUp value={s?.kpi.active} /></b><span>игроков</span></div>
+        <div className="stat hot"><b><CountUp value={s?.kpi.paid} /></b><span>оплатили</span></div>
+        <div className={`stat ${s?.kpi.unpaid ? 'bad' : ''}`}><b><CountUp value={s?.kpi.unpaid} /></b><span>без абонемента</span></div>
+        <div className="stat"><b className="num"><CountUp value={s?.kpi.revenue} format={(n) => `${n >= 1e5 ? Math.round(n / 1000) : Math.round(n / 100) / 10}к`} /></b><span>₽ за месяц</span></div>
+        {s && (s.kpi.paid + s.kpi.unpaid) > 0 && (
+          <div className="meter">
+            <div className="meter-h">
+              <span>Абонементы за {fmt(s.month + '-01', 'LLLL')}{s.kpi.oneOff ? ` · разово ходят: ${s.kpi.oneOff}` : ''}</span>
+              <b className="num">{s.kpi.paid} из {s.kpi.paid + s.kpi.unpaid}</b>
+            </div>
+            <div className="meter-bar" role="img" aria-label={`Оплатили ${s.kpi.paid} из ${s.kpi.paid + s.kpi.unpaid}`}>
+              <i style={{ width: `${Math.round((s.kpi.paid / (s.kpi.paid + s.kpi.unpaid)) * 100)}%` }} />
+            </div>
+          </div>
+        )}
       </div>
 
       <section className="panel" style={{ marginBottom: 16 }}>
