@@ -93,7 +93,8 @@ function NotesHome({ kids }) {
         <div className="lead"><span className="eyebrow acc">Вики клуба</span><h1 className="h1">База знаний</h1></div>
         <Link to="/notes?new=1" className="btn primary"><FilePlus size={16} /> Новая страница</Link>
       </div>
-      {top.length === 0 && <Empty icon={FileText}>Здесь будут регламенты, прайсы, шаблоны сообщений и планы тренировок.</Empty>}
+      {!loaded && <div className="note-cards" aria-hidden="true">{[0, 1, 2].map((i) => <div key={i} className="note-card"><i className="skel" style={{ width: 28, height: 28, borderRadius: 8 }} /><i className="skel s1" style={{ width: `${70 - i * 12}%` }} /><i className="skel s2" style={{ width: '40%' }} /></div>)}</div>}
+      {loaded && top.length === 0 && <Empty icon={FileText}>Здесь будут регламенты, прайсы, шаблоны сообщений и планы тренировок.</Empty>}
       <div className="note-cards">
         {top.map((n) => (
           <Link key={n.id} to={`/notes/${n.id}`} className="note-card">

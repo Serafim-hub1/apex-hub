@@ -5,7 +5,7 @@ import { List, Columns3, Table2, Search, Plus, ListChecks, Inbox } from 'lucide-
 import { useStore } from '../lib/store';
 import { useEditors } from '../components/Layout';
 import { TaskRow, TaskCheck, QuickAdd, areaLabel, dueClass } from '../components/Tasks';
-import { AvatarStack, Prio, Empty } from '../components/ui';
+import { AvatarStack, Prio, Empty, SkelRows } from '../components/ui';
 import { AREAS, STATUSES, PRIORITIES } from '../config';
 import { todayStr, ymd, addDays, dueLabel } from '../lib/dates';
 
@@ -24,7 +24,7 @@ function bucket(t, today, weekEnd) {
 const BUCKETS = ['Просрочено', 'Сегодня', 'Завтра', 'На этой неделе', 'Позже', 'Без срока'];
 
 export default function Tasks() {
-  const { tasks, users, me, updateTask } = useStore();
+  const { tasks, users, me, updateTask, loaded } = useStore();
   const { openTask } = useEditors();
   const [params, setParams] = useSearchParams();
   const prefs = loadPrefs();
@@ -106,7 +106,8 @@ export default function Tasks() {
 
       {view === 'list' && (
         <>
-          {active.length === 0 && <Empty icon={Inbox}>Открытых задач нет. Добавьте первую строкой выше.</Empty>}
+          {!loaded && <div className="panel"><div className="panel-b" style={{ paddingTop: 8 }}><SkelRows n={5} dot /></div></div>}
+          {loaded && active.length === 0 && <Empty icon={Inbox}>Открытых задач нет. Добавьте первую строкой выше.</Empty>}
           {BUCKETS.map((b) => {
             const list = active.filter((t) => bucket(t, today, weekEnd) === b);
             if (!list.length) return null;
@@ -140,7 +141,8 @@ export default function Tasks() {
 }
 
 function TaskTable({ list, onOpen, updateTask }) {
-  const { users } = useStore();
+  const { users, loaded } = useStore();
+  if (!loaded) return <div className="panel"><div className="panel-b" style={{ paddingTop: 8 }}><SkelRows n={5} dot /></div></div>;
   if (!list.length) return <Empty icon={Inbox}>Задач по этим фильтрам нет.</Empty>;
   return (
     <div className="table-wrap">

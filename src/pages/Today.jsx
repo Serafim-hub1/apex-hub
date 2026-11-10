@@ -5,7 +5,7 @@ import { useStore } from '../lib/store';
 import { useEditors } from '../components/Layout';
 import { TaskRow, QuickAdd } from '../components/Tasks';
 import { typeLabel } from '../components/EventEditor';
-import { Avatar, Empty } from '../components/ui';
+import { Avatar, Empty, SkelRows } from '../components/ui';
 import { Peak } from '../components/Brand';
 import { CountUp, Words } from '../components/motion';
 import { todayStr, ymd, addDays, fmt, greeting, humanDay } from '../lib/dates';
@@ -92,7 +92,7 @@ export default function Today() {
             <div className="panel-b">
               <QuickAdd defaults={{ dueDate: today }} placeholder="Добавить на сегодня: «Купить сетки в 18:00 !»" />
               <div className="tlist" style={{ marginTop: 8 }}>
-                {!loaded && [1, 2, 3].map((i) => <div key={i} className="skel" style={{ margin: '14px 4px', width: `${80 - i * 12}%` }} />)}
+                {!loaded && <SkelRows n={3} dot />}
                 {overdue.map((t) => <TaskRow key={t.id} task={t} onOpen={openTask} />)}
                 {dueToday.map((t) => <TaskRow key={t.id} task={t} onOpen={openTask} />)}
                 {noDate.map((t) => <TaskRow key={t.id} task={t} onOpen={openTask} />)}
@@ -111,7 +111,8 @@ export default function Today() {
             </div>
             <div className="panel-b">
               <div className="tlist">
-                {week.length === 0 && <Empty>На ближайшие 7 дней задач нет.</Empty>}
+                {!loaded && <SkelRows n={2} dot />}
+                {loaded && week.length === 0 && <Empty>На ближайшие 7 дней задач нет.</Empty>}
                 {week.map((t) => <TaskRow key={t.id} task={t} onOpen={openTask} />)}
               </div>
             </div>
@@ -126,7 +127,8 @@ export default function Today() {
             </div>
             <div className="panel-b">
               <div className="agenda">
-                {todayEvents.length === 0 && <Empty icon={CalendarDays}>Сегодня без тренировок и встреч.</Empty>}
+                {!loaded && <SkelRows n={2} dense />}
+                {loaded && todayEvents.length === 0 && <Empty icon={CalendarDays}>Сегодня без тренировок и встреч.</Empty>}
                 {todayEvents.map((e) => (
                   <div key={e.id} className={`ag-row ${e.end && e.end < nowHM ? 'past' : ''}`} onClick={() => openEvent(e)}>
                     <div className="tm">{e.allDay ? 'Весь день' : e.start}<small>{e.end}</small></div>
@@ -162,7 +164,7 @@ export default function Today() {
                 <Link to="/club" className="btn ghost sm">Клуб <ArrowRight size={14} /></Link>
               </div>
               <div className="panel-b">
-                {!club && <div className="skel" style={{ margin: '10px 0', width: '70%' }} />}
+                {!club && <SkelRows n={3} pill dense />}
                 {club && (
                   <div style={{ display: 'flex', gap: 22, marginBottom: 8 }}>
                     <div className="stat"><b className="num">{club.kpi.paid}</b><span>оплатили</span></div>

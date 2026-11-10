@@ -25,6 +25,8 @@
   --danger-soft: rgba(255, 107, 107, 0.12);
   --shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
   --overlay: rgba(6, 8, 10, 0.62);
+  --panel-shadow: none;
+  --skel-a: #1c2024; --skel-b: #2a3036;
 
   --topo-img: url('../assets/brand/topo-black.jpg'); --topo-op: 0.42;
   --pk-far: #191d21; --pk-lit: #30363c; --pk-lit2: #272c32; --pk-shade: #1b1f23; --pk-shade2: #20252a;
@@ -43,14 +45,14 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
     --bg: #f5f6f4; --surface: #ffffff; --surface-2: #eef0ee; --raised: #ffffff;
-    --hover: rgba(17, 19, 21, 0.045); --line: #e2e5e3; --line-strong: #c9cecd;
-    --fg: #111315; --fg-2: #3a3f44; --muted: #6b7077;
+    --hover: rgba(17, 19, 21, 0.045); --line: #dfe3e0; --line-strong: #c3c9c7;
+    --fg: #111315; --fg-2: #353a3f; --muted: #666b72;
     --accent: #58d6ff; --accent-text: #0a86ae; --accent-ink: #061820;
     --accent-soft: rgba(88, 214, 255, 0.18); --accent-line: rgba(10, 134, 174, 0.35);
     --ok: #16865a; --ok-soft: rgba(22, 134, 90, 0.1); --warn: #a8670b; --warn-soft: rgba(214, 140, 20, 0.13);
     --danger: #cf3b3b; --danger-soft: rgba(207, 59, 59, 0.1);
     --shadow: 0 18px 48px rgba(17, 19, 21, 0.14); --overlay: rgba(17, 19, 21, 0.35);
-    --topo-img: url('../assets/brand/topo-white.jpg'); --topo-op: 0.5;
+    --topo-img: url('../assets/brand/topo-white.jpg'); --topo-op: 0.42; --panel-shadow: 0 1px 2px rgba(17, 19, 21, 0.04), 0 10px 26px -14px rgba(17, 19, 21, 0.16); --skel-a: #eceeec; --skel-b: #f8f9f8;
     --pk-far: #dfe3e1; --pk-lit: #3d4349; --pk-lit2: #32373d; --pk-shade: #1d2125; --pk-shade2: #252a2f;
     --pk-snow: #ffffff; --pk-snow2: #c6ccd0; --pk-edge: rgba(245, 246, 244, 0.3);
     color-scheme: light;
@@ -58,14 +60,14 @@
 }
 :root[data-theme='light'] {
   --bg: #f5f6f4; --surface: #ffffff; --surface-2: #eef0ee; --raised: #ffffff;
-  --hover: rgba(17, 19, 21, 0.045); --line: #e2e5e3; --line-strong: #c9cecd;
-  --fg: #111315; --fg-2: #3a3f44; --muted: #6b7077;
+  --hover: rgba(17, 19, 21, 0.045); --line: #dfe3e0; --line-strong: #c3c9c7;
+  --fg: #111315; --fg-2: #353a3f; --muted: #666b72;
   --accent: #58d6ff; --accent-text: #0a86ae; --accent-ink: #061820;
   --accent-soft: rgba(88, 214, 255, 0.18); --accent-line: rgba(10, 134, 174, 0.35);
   --ok: #16865a; --ok-soft: rgba(22, 134, 90, 0.1); --warn: #a8670b; --warn-soft: rgba(214, 140, 20, 0.13);
   --danger: #cf3b3b; --danger-soft: rgba(207, 59, 59, 0.1);
   --shadow: 0 18px 48px rgba(17, 19, 21, 0.14); --overlay: rgba(17, 19, 21, 0.35);
-  --topo-img: url('../assets/brand/topo-white.jpg'); --topo-op: 0.5;
+  --topo-img: url('../assets/brand/topo-white.jpg'); --topo-op: 0.42; --panel-shadow: 0 1px 2px rgba(17, 19, 21, 0.04), 0 10px 26px -14px rgba(17, 19, 21, 0.16); --skel-a: #eceeec; --skel-b: #f8f9f8;
     --pk-far: #dfe3e1; --pk-lit: #3d4349; --pk-lit2: #32373d; --pk-shade: #1d2125; --pk-shade2: #252a2f;
     --pk-snow: #ffffff; --pk-snow2: #c6ccd0; --pk-edge: rgba(245, 246, 244, 0.3);
   color-scheme: light;
@@ -196,6 +198,8 @@ a { color: var(--accent-text); }
 }
 .btn:hover { background: var(--raised); border-color: var(--muted); }
 .btn:disabled { opacity: .5; cursor: default; }
+/* неактивная главная кнопка — спокойная серая, а не «выцветший» голубой */
+.btn.primary:disabled { opacity: 1; background: var(--surface-2); border-color: var(--line); color: var(--muted); filter: none; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover { filter: brightness(1.06); }
 .btn.ghost { background: none; border-color: transparent; color: var(--fg-2); }
@@ -265,14 +269,23 @@ a { color: var(--accent-text); }
 .avs .av + .av { margin-left: -8px; }
 
 /* ── панели ── */
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--panel-shadow); }
 .panel-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px 10px; }
 .panel-b { padding: 4px 16px 16px; }
 .panel-h .h2 { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .panel-h > .seg, .panel-h > .btn { flex: none; }
 @media (max-width: 560px) { .panel-h .h2 { font-size: 17px; } .panel-h .seg button { padding: 5px 9px; } }
-.empty { padding: 26px 16px; text-align: center; color: var(--muted); font-size: 14px; display: grid; gap: 10px; justify-items: center; }
-.empty svg { color: var(--line-strong); }
+.empty { padding: 22px 16px; text-align: center; color: var(--muted); font-size: 14px; display: grid; gap: 10px; justify-items: center; }
+.empty-t { max-width: 36ch; text-wrap: balance; }
+.empty.rich { padding: 40px 16px 28px; gap: 12px; }
+/* значок в двух «контурных» кольцах — тот же мотив, что топография на фоне */
+.empty-ic {
+  position: relative; width: 50px; height: 50px; margin-bottom: 18px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface-2); border: 1px solid var(--line-strong); color: var(--fg-2);
+}
+.empty-ic::before, .empty-ic::after { content: ''; position: absolute; border: 1px solid var(--line-strong); pointer-events: none; }
+.empty-ic::before { inset: -9px; border-radius: 47% 53% 51% 49% / 52% 47% 53% 48%; opacity: 0.7; }
+.empty-ic::after { inset: -19px; border-radius: 52% 48% 46% 54% / 47% 53% 48% 52%; opacity: 0.38; }
 .banner { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: var(--r); border: 1px solid var(--accent-line); background: var(--accent-soft); font-size: 14px; }
 .banner.warn { border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: var(--warn-soft); }
 .banner .grow { flex: 1; min-width: 0; }
@@ -579,7 +592,17 @@ table.db select.inline { border: 0; background: none; color: inherit; font-weigh
 .toast button { margin-left: auto; border: 0; background: none; color: inherit; font-weight: 800; cursor: pointer; text-decoration: underline; }
 .toast.bad { background: var(--danger); color: #fff; }
 
-.skel { background: linear-gradient(90deg, var(--surface-2), var(--raised), var(--surface-2)); background-size: 200% 100%; animation: sh 1.2s infinite linear; border-radius: 6px; height: 14px; }
+.skel { display: block; background: linear-gradient(100deg, var(--skel-a) 30%, var(--skel-b) 50%, var(--skel-a) 70%); background-size: 220% 100%; animation: sh 1.5s infinite linear; border-radius: 6px; height: 14px; }
+.skel.s1 { height: 13px; } .skel.s2 { height: 10px; opacity: 0.7; }
+.skel.dot { width: 22px; height: 22px; border-radius: 50%; flex: none; }
+.skel.pill { width: 86px; height: 22px; border-radius: 11px; flex: none; }
+.skel.num { width: 1.6em; height: 0.9em; margin: 0.1em 0; border-radius: 6px; }
+.skel.card { height: 76px; border-radius: var(--r); }
+.skel-rows { display: grid; }
+.skel-row { display: flex; align-items: center; gap: 12px; padding: 13px 4px; border-bottom: 1px solid var(--line); }
+.skel-row:last-child { border-bottom: 0; }
+.skel-row .l { flex: 1; min-width: 0; display: grid; gap: 8px; }
+.skel-rows.dense .skel-row { padding: 10px 2px; }
 @keyframes sh { to { background-position: -200% 0; } }
 .splash { height: 100%; display: grid; place-items: center; padding: 20px; }
 .demo-flag { font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent); border-radius: 4px; padding: 1px 6px; }
@@ -767,3 +790,11 @@ html.booting .route *, html.booting .login * { animation-play-state: paused !imp
   ::view-transition-new(apex-side), ::view-transition-new(apex-top), ::view-transition-new(apex-tabs), ::view-transition-new(apex-fab) { animation: none; }
   ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.26s; animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
 }
+
+/* ── Слой 3: глубина в светлой теме, пустые состояния ── */
+.statbar, .table-wrap, .col, .note-card, .cal, .subpages a, .who-card { box-shadow: var(--panel-shadow); }
+.empty.rich .empty-ic { animation: in-up var(--dur-3) var(--ease) backwards; }
+.empty.rich .empty-ic::before { animation: ring-in 0.8s var(--ease) 0.12s backwards; }
+.empty.rich .empty-ic::after { animation: ring-in 0.9s var(--ease) 0.22s backwards; }
+@keyframes ring-in { from { opacity: 0; transform: scale(0.7); } }
+.skel-rows { animation: in-fade var(--dur-2) var(--ease) backwards; }

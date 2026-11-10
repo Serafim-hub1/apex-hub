@@ -98,12 +98,36 @@ export function Prio({ p }) {
   return <span className={`prio ${p || 'med'}`} title={{ high: 'Высокий', med: 'Средний', low: 'Низкий' }[p || 'med']}><i /><i /><i /></span>;
 }
 
+/** Пустое состояние. С иконкой — значок в «контурных» кольцах (мотив топографии), без иконки — короткая строка. */
 export function Empty({ icon: Icon, children, action }) {
   return (
-    <div className="empty">
-      {Icon && <Icon size={30} strokeWidth={1.5} />}
-      <div>{children}</div>
+    <div className={`empty ${Icon ? 'rich' : ''}`}>
+      {Icon && <span className="empty-ic"><Icon size={22} strokeWidth={1.75} /></span>}
+      <div className="empty-t">{children}</div>
       {action}
+    </div>
+  );
+}
+
+/** Скелетон списка на время загрузки: строки той же формы, что и настоящие (кружок/название/подпись/пилюля). */
+const SKEL_W = [[62, 34], [46, 26], [70, 40], [38, 22], [56, 30], [50, 36]];
+export function SkelRows({ n = 3, dot = false, pill = false, dense = false }) {
+  return (
+    <div className={`skel-rows ${dense ? 'dense' : ''}`} aria-hidden="true">
+      {Array.from({ length: n }, (_, i) => {
+        const [a, b] = SKEL_W[i % SKEL_W.length];
+        const d = { animationDelay: `${i * 110}ms` };
+        return (
+          <div key={i} className="skel-row">
+            {dot && <i className="skel dot" style={d} />}
+            <div className="l">
+              <i className="skel s1" style={{ ...d, width: `${a}%` }} />
+              <i className="skel s2" style={{ ...d, width: `${b}%` }} />
+            </div>
+            {pill && <i className="skel pill" style={d} />}
+          </div>
+        );
+      })}
     </div>
   );
 }
