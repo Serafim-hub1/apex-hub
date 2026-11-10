@@ -381,7 +381,7 @@ table.db select.inline { border: 0; background: none; color: inherit; font-weigh
 .progress i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
 
 /* ── «Сегодня» ── */
-.hero { margin-bottom: 18px; }
+.hero { margin-bottom: 0; }
 .hero-top { position: relative; display: grid; align-content: end; min-height: 168px; padding: 4px 4px 20px; }
 .hero .peak { position: absolute; right: 12px; bottom: -1px; width: min(46%, 380px); pointer-events: none; }
 .hero-in { position: relative; display: grid; gap: 10px; justify-items: start; max-width: 62%; }
@@ -425,8 +425,8 @@ table.db select.inline { border: 0; background: none; color: inherit; font-weigh
 .agenda { display: grid; }
 .ag-row { display: grid; grid-template-columns: 58px 3px minmax(0, 1fr); gap: 12px; padding: 9px 4px; align-items: stretch; cursor: pointer; border-radius: var(--r-sm); }
 .ag-row:hover { background: var(--hover); }
-.ag-row .tm { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 14px; line-height: 1.3; }
-.ag-row .tm small { display: block; color: var(--muted); font-weight: 500; font-size: 12px; }
+.ag-row .tm { font-family: var(--f-display); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 19px; line-height: 1.15; letter-spacing: 0.01em; }
+.ag-row .tm small { display: block; font-family: var(--f-body); color: var(--muted); font-weight: 500; font-size: 12px; letter-spacing: 0; margin-top: 2px; }
 .ag-row .bar { border-radius: 2px; background: var(--line-strong); }
 .ag-row .bar.training { background: var(--accent); }
 .ag-row .bar.game { background: var(--fg); }
@@ -798,3 +798,55 @@ html.booting .route *, html.booting .login * { animation-play-state: paused !imp
 .empty.rich .empty-ic::after { animation: ring-in 0.9s var(--ease) 0.22s backwards; }
 @keyframes ring-in { from { opacity: 0; transform: scale(0.7); } }
 .skel-rows { animation: in-fade var(--dur-2) var(--ease) backwards; }
+
+/* ── «Сегодня» как дашборд: плитки с цифрами и плашка ближайшей тренировки ── */
+.today-top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 16px; position: relative; }
+@media (min-width: 981px) { .today-top { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 16px; } }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.tile {
+  display: grid; align-content: space-between; gap: 8px; min-height: 92px; padding: 14px 14px 12px; min-width: 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--panel-shadow);
+  color: var(--fg); text-decoration: none;
+}
+.tile b { font-family: var(--f-display); font-weight: 600; font-size: 38px; line-height: 1; font-variant-numeric: tabular-nums; display: block; }
+.tile b small { font-size: 0.52em; font-weight: 500; color: var(--muted); margin-left: 1px; }
+.tile .l { font-size: 12px; font-weight: 700; color: var(--muted); }
+.tile.hot b { color: var(--accent-text); } .tile.bad b { color: var(--danger); }
+.tile.pay { grid-template-columns: minmax(0, 1fr) auto; align-content: stretch; align-items: center; gap: 6px; transition: border-color var(--dur-2) var(--ease), transform var(--dur-2) var(--ease); }
+.tile-in { display: grid; align-content: space-between; gap: 8px; height: 100%; min-width: 0; }
+.ring { width: 36px; height: 36px; flex: none; }
+.ring-t { fill: none; stroke: var(--line-strong); stroke-width: 11; opacity: 0.6; }
+.ring-v { fill: none; stroke: var(--accent); stroke-width: 11; stroke-linecap: round; transition: stroke-dashoffset 1s var(--ease); animation: ring-draw 1.2s var(--ease) 0.3s backwards; }
+@keyframes ring-draw { from { stroke-dashoffset: 276.46; } }
+
+.next-card {
+  position: relative; display: grid; gap: 10px; align-content: space-between; width: 100%; padding: 13px 16px 13px 19px; text-align: left; font: inherit; color: var(--fg); cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--panel-shadow);
+  transition: border-color var(--dur-2) var(--ease), transform var(--dur-2) var(--ease);
+}
+.next-card::before { content: ''; position: absolute; left: -1px; top: 14px; bottom: 14px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); }
+.next-card.game::before { background: var(--fg); }
+.nc-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.nc-main { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.nc-time { font-family: var(--f-display); font-weight: 600; font-size: 44px; line-height: 1; letter-spacing: 0.01em; flex: none; }
+.nc-info { display: grid; gap: 2px; min-width: 0; }
+.nc-info .tt { font-weight: 700; font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nc-info .sub { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nc-next { display: flex; align-items: baseline; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); min-width: 0; }
+.nc-next b { color: var(--fg); font-size: 13px; }
+.nc-next .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
+.pill.live .pdot { animation: live 1.6s ease-in-out infinite; }
+@keyframes live { 50% { opacity: 0.25; } }
+@media (hover: hover) { .next-card:hover, .tile.pay:hover { border-color: var(--line-strong); transform: translateY(-2px); } }
+.next-card:active, .tile.pay:active { transform: scale(0.985); }
+@media (max-width: 560px) {
+  .tiles { gap: 8px; }
+  .tile { min-height: 84px; padding: 12px 12px 11px; }
+  .tile b { font-size: 32px; }
+  .ring { width: 28px; height: 28px; }
+  .nc-time { font-size: 40px; }
+}
+.today-top > * { animation: in-up var(--dur-3) var(--ease) backwards; }
+.today-top > :nth-child(2) { animation-delay: 80ms; }
+.tiles > * { animation: in-up var(--dur-3) var(--ease) backwards; }
+.tiles > :nth-child(2) { animation-delay: 50ms; } .tiles > :nth-child(3) { animation-delay: 100ms; }
