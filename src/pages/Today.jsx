@@ -13,6 +13,29 @@ import { clubCall, clubConfigured, readCache, reminderText } from '../lib/club';
 
 const timeKey = (t) => (t.dueTime || '99:99');
 
+/** «через 40 мин», «Идёт сейчас», «Завтра», «чт, 12 нояб.» */
+function whenLabel(e, today) {
+  if (e.date !== today) return humanDay(e.date);
+  if (e.allDay || !e.start) return 'Сегодня';
+  const [h, m] = e.start.split(':').map(Number);
+  const now = new Date();
+  const diff = h * 60 + m - (now.getHours() * 60 + now.getMinutes());
+  if (diff <= 0) return 'Идёт сейчас';
+  if (diff < 60) return `через ${diff} мин`;
+  return diff % 60 ? `через ${Math.floor(diff / 60)} ч ${diff % 60} мин` : `через ${diff / 60} ч`;
+}
+
+/** Кольцо доли (оплатили / всего). */
+function Ring({ value }) {
+  const C = 2 * Math.PI * 44;
+  return (
+    <svg className="ring" viewBox="0 0 100 100" aria-hidden="true">
+      <circle className="ring-t" cx="50" cy="50" r="44" />
+      <circle className="ring-v" cx="50" cy="50" r="44" strokeDasharray={C} strokeDashoffset={C * (1 - Math.min(1, Math.max(0, value)))} transform="rotate(-90 50 50)" />
+    </svg>
+  );
+}
+
 export function pushState() {
   if (typeof Notification === 'undefined') return 'unsupported';
   return Notification.permission; // granted | denied | default
@@ -24,6 +47,8 @@ export default function Today() {
   const [scope, setScope] = useState('me');
   const [club, setClub] = useState(() => readCache('summary')?.data || null);
   const today = todayStr();
+  const [, setTick] = useState(0); // раз в полминуты пересчитываем «через N мин»
+  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   const weekEnd = ymd(addDays(new Date(), 7));
 
   useEffect(() => {
@@ -43,6 +68,12 @@ export default function Today() {
   const nextEvents = events.filter((e) => e.date > today && e.date <= ymd(addDays(new Date(), 4)))
     .sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || ''))).slice(0, 5);
   const nowHM = fmt(new Date(), 'HH:mm');
+  // Ближайшая тренировка или игра — для плашки под приветствием (ещё не закончилась сегодня либо в следующие дни).
+  const sport = events.filter((e) => (e.type === 'training' || e.type === 'game')
+    && (e.date > today || (e.date === today && (e.allDay || (e.end || e.start || '99:99') >= nowHM))))
+    .sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
+  const [next, after] = sport;
+  const when = next ? whenLabel(next, today) : '';
 
   const load = useMemo(() => users.map((u) => ({
     u, n: tasks.filter((t) => t.status !== 'done' && (t.assignees || []).includes(u.id)).length,
@@ -63,13 +94,50 @@ export default function Today() {
             <i className="rule" />
           </div>
         </div>
-        <div className="statbar">
-          <div className="stat hot"><b><CountUp value={dueToday.length} /></b><span>на сегодня</span></div>
-          <div className={`stat ${overdue.length ? 'bad' : ''}`}><b><CountUp value={overdue.length} /></b><span>просрочено</span></div>
-          <div className="stat"><b><CountUp value={todayEvents.length} /></b><span>{todayEvents.length === 1 ? 'событие' : 'событий'}</span></div>
-          <div className="stat"><b><CountUp value={doneToday.length} /></b><span>закрыто</span></div>
-        </div>
       </section>
+
+      <div className="today-top">
+        <div className="tiles">
+          <div className="tile hot"><b><CountUp value={dueToday.length} /></b><span className="l">на сегодня</span></div>
+          <div className={`tile ${overdue.length ? 'bad' : ''}`}><b><CountUp value={overdue.length} /></b><span className="l">просрочено</span></div>
+          {clubConfigured() ? (
+            <Link to="/club" className="tile pay" aria-label="Оплаты за месяц — открыть «Клуб»">
+              <span className="tile-in">
+                <b>{club ? <><CountUp value={club.kpi.paid} /><small>/{club.kpi.paid + club.kpi.unpaid}</small></> : <i className="skel num" />}</b>
+                <span className="l">оплатили</span>
+              </span>
+              <Ring value={club ? club.kpi.paid / Math.max(1, club.kpi.paid + club.kpi.unpaid) : 0} />
+            </Link>
+          ) : (
+            <div className="tile"><b><CountUp value={doneToday.length} /></b><span className="l">закрыто</span></div>
+          )}
+        </div>
+
+        {!loaded && <i className="skel card" style={{ height: 118 }} />}
+        {loaded && next && (
+          <button type="button" className={`next-card ${next.type}`} onClick={() => openEvent(next)}>
+            <span className="nc-top">
+              <span className="eyebrow">{next.type === 'game' ? 'Ближайшая игра' : 'Ближайшая тренировка'}</span>
+              <span className={`pill acc ${when === 'Идёт сейчас' ? 'live' : ''}`}>{when === 'Идёт сейчас' && <span className="pdot" />}{when}</span>
+            </span>
+            <span className="nc-main">
+              <b className="nc-time num">{next.allDay || !next.start ? '—' : next.start}</b>
+              <span className="nc-info">
+                <span className="tt">{next.title}</span>
+                <span className="sub">{[String(next.location || '').split(',')[0], next.end && `до ${next.end}`].filter(Boolean).join(' · ') || typeLabel(next.type)}</span>
+              </span>
+            </span>
+            {after && (
+              <span className="nc-next">
+                <span>Затем</span>
+                <b className="num">{after.start || '—'}</b>
+                <span className="t">{after.title}</span>
+                {after.date !== today && <span>{humanDay(after.date).toLowerCase()}</span>}
+              </span>
+            )}
+          </button>
+        )}
+      </div>
 
       {ps === 'default' && (
         <div className="banner" style={{ marginBottom: 16, alignItems: 'center' }}>

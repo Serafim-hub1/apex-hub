@@ -97,6 +97,47 @@ export async function clubCall(action, payload = {}, getIdToken) {
   return json.data;
 }
 
+/* ── Карточка игрока: кэш на устройстве. Открывается сразу из кэша и тихо обновляется из таблицы. ── */
+const CARD = 'player:';
+const cardMem = new Map(); // id → { at, data }
+const cardBusy = new Map(); // id → идущий запрос (чтобы не слать второй такой же)
+const cardHit = (id) => {
+  const k = String(id);
+  if (!cardMem.has(k)) { const c = readCache(CARD + k); if (c?.data) cardMem.set(k, c); }
+  return cardMem.get(k) || null;
+};
+export const cachedPlayer = (id) => cardHit(id)?.data || null;
+/** Карточка из таблицы; если есть копия свежее fresh мс — отдаём её без запроса. */
+export function loadPlayer(id, getIdToken, { fresh = 20000 } = {}) {
+  const k = String(id);
+  const hit = cardHit(k);
+  if (hit && Date.now() - hit.at < fresh) return Promise.resolve(hit.data);
+  if (cardBusy.has(k)) return cardBusy.get(k);
+  const p = clubCall('player', { id }, getIdToken)
+    .then((data) => { cardMem.set(k, { at: Date.now(), data }); writeCache(CARD + k, data); return data; })
+    .finally(() => cardBusy.delete(k));
+  cardBusy.set(k, p);
+  return p;
+}
+/** Заранее подгружает карточки по одной (тех, кого вероятнее всего откроют). */
+export async function prefetchPlayers(ids, getIdToken) {
+  for (const id of ids) {
+    try { await loadPlayer(id, getIdToken, { fresh: 5 * 60000 }); } catch { return; }
+  }
+}
+/** После записи оплаты или посещаемости копии устарели: забыть одну карточку или все. */
+export function forgetPlayers(id) {
+  if (id !== undefined && id !== null) {
+    cardMem.delete(String(id));
+    try { localStorage.removeItem(CACHE + CARD + id); } catch { /* */ }
+    return;
+  }
+  cardMem.clear();
+  try {
+    Object.keys(localStorage).filter((k) => k.startsWith(CACHE + CARD)).forEach((k) => localStorage.removeItem(k));
+  } catch { /* */ }
+}
+
 /* ───────────────────────── демо-данные ───────────────────────── */
 
 const DEMO_KEY = 'apex-demo-club-v2';

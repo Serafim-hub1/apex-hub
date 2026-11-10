@@ -52,6 +52,7 @@ export function Splash({ ready }) {
         frames = [{ transform: 'none' }, { transform: `translate(${dx}px, ${dy}px) scale(${b.width / a.width})`, color: getComputedStyle(target).color }];
       }
       mark.animate(frames, opts).onfinish = () => setGone(true);
+      setTimeout(() => setGone(true), 1200); // страховка: в фоновой вкладке анимация может не завершиться
     }, wait);
     return () => clearTimeout(t);
   }, [ready, gone]);

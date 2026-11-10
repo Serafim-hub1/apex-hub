@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Wallet, RefreshCw, Plus, ClipboardCheck, UserPlus, Search, CheckCheck, Phone, FileSpreadsheet, AlertTriangle, MessageCircle, Send, Copy } from 'lucide-react';
+import { Wallet, RefreshCw, Plus, ClipboardCheck, UserPlus, Search, CheckCheck, Phone, FileSpreadsheet, AlertTriangle, Send, Copy } from 'lucide-react';
 import { useStore } from '../lib/store';
-import { clubCall, clubConfigured, readCache, reminderText, reminderMessage, payContact, phoneDigits, DEFAULT_LISTS, PRICES } from '../lib/club';
+import { clubCall, clubConfigured, readCache, reminderText, reminderMessage, payContact, phoneDigits, cachedPlayer, loadPlayer, prefetchPlayers, forgetPlayers, DEFAULT_LISTS, PRICES } from '../lib/club';
 import { Modal, ModalHead, Empty, TitleArea, Collapse, SkelRows, useToast } from '../components/ui';
 import { todayStr, fmt, humanDay } from '../lib/dates';
 import { CountUp } from '../components/motion';
@@ -81,6 +81,7 @@ export default function Club() {
 function Payments({ openAdd }) {
   const sum = useClub('summary');
   const recent = useClub('payRecent');
+  const { getIdToken } = useStore();
   const pl = useClub('players'); // телефоны для кнопки «Напомнить» прямо в списке
   const contacts = useMemo(() => Object.fromEntries((pl.data?.players || []).map((x) => [x.id, x])), [pl.data]);
   const [form, setForm] = useState(openAdd ? {} : null);
@@ -98,6 +99,11 @@ function Payments({ openAdd }) {
   const sections = useMemo(() => PAY_SECTIONS.map((sec) => ({ ...sec, items: list.filter(sec.test) })), [list]);
 
   const reload = () => { sum.reload(); recent.reload(); };
+  const warm = (id) => { loadPlayer(id, getIdToken).catch(() => {}); };
+  useEffect(() => {
+    const ids = payments.filter((p) => p.status !== 'Оплачен' || p.reminder).slice(0, 6).map((p) => p.id);
+    if (ids.length) prefetchPlayers(ids, getIdToken);
+  }, [payments, getIdToken]);
 
   return (
     <>
@@ -144,7 +150,7 @@ function Payments({ openAdd }) {
           {sections.filter((sec) => sec.items.length > 0).map((sec) => (
             <Collapse key={sec.key} id={`pay-${sec.key}`} title={sec.label} count={sec.items.length} defaultOpen={sec.open} forceOpen={!!q} className={`pay-sec ${sec.key}`}>
               {sec.items.map((p) => (
-                <div key={p.id} className="prow" onClick={() => setCard(p)} style={{ cursor: 'pointer' }}>
+                <div key={p.id} className="prow" onPointerDown={() => warm(p.id)} onClick={() => setCard(p)} style={{ cursor: 'pointer' }}>
                   <div style={{ minWidth: 0 }}>
                     <div className="n">{p.fio}</div>
                     <div className="s">
@@ -285,6 +291,7 @@ function PayForm({ initial, onClose, onSaved, payments = [] }) {
     setBusy(true); setErr('');
     try {
       await clubCall('payAdd', { pay: { ...d, fio: player.fio, amount: Number(d.amount) } }, getIdToken);
+      forgetPlayers(player.id);
       toast(`Оплата ${player.fio.split(' ')[0]} записана в таблицу`);
       onSaved(); onClose();
     } catch (e) { setErr(e.message); } finally { setBusy(false); }
@@ -332,24 +339,24 @@ function PayForm({ initial, onClose, onSaved, payments = [] }) {
 /* ───────────── Карточка игрока ───────────── */
 const MARK_CLASS = { '✓': 'y', '✕': 'n', 'У': 'u' };
 
-/** Ссылки «написать»: WhatsApp умеет подставлять текст, в Telegram текст копируем и открываем чат по номеру. */
+/** «Написать» — только Telegram: чат по номеру с уже подставленным текстом (t.me/+номер?text=…).
+ *  Текст заодно копируем: если Telegram его не подставил, остаётся вставить. */
 export function RemindButtons({ info, row, compact = false }) {
   const toast = useToast();
   const { phone } = payContact(info);
   const msg = reminderMessage(info, row, fmt(todayStr().slice(0, 7) + '-01', 'LLLL'));
+  const href = phone ? `https://t.me/+${phone}?text=${encodeURIComponent(msg)}` : '';
   const copy = async (silent) => {
     try { await navigator.clipboard.writeText(msg); if (!silent) toast('Текст напоминания скопирован'); return true; } catch { if (!silent) toast('Не удалось скопировать', { bad: true }); return false; }
   };
-  const stop = (e) => e.stopPropagation();
   if (compact) {
     return phone
-      ? <a className="icon-btn" href={`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer" onClick={stop} aria-label={`Напомнить в WhatsApp: ${info.fio}`} title="Напомнить в WhatsApp"><MessageCircle size={17} /></a>
+      ? <a className="icon-btn" href={href} target="_blank" rel="noreferrer" onClick={(e) => { e.stopPropagation(); copy(true); }} aria-label={`Напомнить в Telegram: ${info.fio}`} title="Напомнить в Telegram"><Send size={17} /></a>
       : null;
   }
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      {phone && <a className="btn sm primary" href={`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer"><MessageCircle size={15} /> WhatsApp</a>}
-      {phone && <a className="btn sm" href={`https://t.me/+${phone}`} target="_blank" rel="noreferrer" onClick={() => { copy(true).then((ok) => ok && toast('Текст скопирован — вставьте в чат')); }}><Send size={15} /> Telegram</a>}
+      {phone && <a className="btn sm primary" href={href} target="_blank" rel="noreferrer" onClick={() => { copy(true); }}><Send size={15} /> Написать в Telegram</a>}
       <button type="button" className="btn sm ghost" onClick={() => copy(false)}><Copy size={15} /> Скопировать текст</button>
       {!phone && <span className="muted" style={{ fontSize: 12.5, alignSelf: 'center' }}>В «Игроках» нет телефона для связи</span>}
     </div>
@@ -358,15 +365,18 @@ export function RemindButtons({ info, row, compact = false }) {
 
 function PlayerCard({ id, row, onClose, onPay }) {
   const { getIdToken } = useStore();
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(() => cachedPlayer(id));
   const [err, setErr] = useState('');
+  // Телефоны уже есть в списке игроков — контакты и напоминание видны сразу, не дожидаясь таблицы.
+  const known = useMemo(() => (readCache('players')?.data?.players || []).find((x) => String(x.id) === String(id)) || null, [id]);
   useEffect(() => {
     let on = true;
-    clubCall('player', { id }, getIdToken).then((d) => on && setData(d)).catch((e) => on && setErr(e.message));
+    setData(cachedPlayer(id)); setErr('');
+    loadPlayer(id, getIdToken).then((d) => on && setData(d)).catch((e) => on && !cachedPlayer(id) && setErr(e.message));
     return () => { on = false; };
   }, [id, getIdToken]);
 
-  const info = data?.info || { fio: row?.fio || '', group: row?.group || '' };
+  const info = data?.info || { fio: row?.fio || '', group: row?.group || '', ...(known || {}) };
   const visits = data?.visits || [];
   const marked = visits.filter((v) => v.mark);
   const was = marked.filter((v) => v.mark === '✓').length;
@@ -395,9 +405,7 @@ function PlayerCard({ id, row, onClose, onPay }) {
           </div>
         </div>
         {err && <div className="banner warn"><AlertTriangle size={18} /><span className="grow">{err}</span></div>}
-        {!data && !err && <SkelRows n={4} pill dense />}
-
-        {data && (
+        {(data || known) && (
           <>
             <div className="pc-contacts">
               {[[info.parent || (info.group === 'Junior' ? 'Родитель' : ''), info.parentPhone], [info.group === 'Junior' ? 'Игрок' : info.fio.split(' ')[1] || 'Телефон', info.phone]]
@@ -410,6 +418,19 @@ function PlayerCard({ id, row, onClose, onPay }) {
             </div>
 
             <section>
+              <div className="lbl">Напоминание об оплате</div>
+              {needsReminder
+                ? <p className="muted" style={{ fontSize: 13, margin: '4px 0 8px' }}>{reminderMessage(info, row, fmt(todayStr().slice(0, 7) + '-01', 'LLLL'))}</p>
+                : <p className="muted" style={{ fontSize: 13, margin: '4px 0 8px' }}>Абонемент оплачен — напоминать не нужно, но написать можно.</p>}
+              <RemindButtons info={info} row={row} />
+            </section>
+          </>
+        )}
+        {!data && !err && <SkelRows n={3} pill dense />}
+
+        {data && (
+          <>
+            <section>
               <div className="lbl">Посещаемость</div>
               {marked.length ? (
                 <>
@@ -421,14 +442,6 @@ function PlayerCard({ id, row, onClose, onPay }) {
                   </div>
                 </>
               ) : <div className="muted" style={{ fontSize: 13 }}>Отметок пока нет.</div>}
-            </section>
-
-            <section>
-              <div className="lbl">Напоминание об оплате</div>
-              {needsReminder
-                ? <p className="muted" style={{ fontSize: 13, margin: '4px 0 8px' }}>{reminderMessage(info, row, fmt(todayStr().slice(0, 7) + '-01', 'LLLL'))}</p>
-                : <p className="muted" style={{ fontSize: 13, margin: '4px 0 8px' }}>Абонемент оплачен — напоминать не нужно, но написать можно.</p>}
-              <RemindButtons info={info} row={row} />
             </section>
 
             <section>
@@ -489,6 +502,7 @@ function Attendance() {
     setBusy(true);
     try {
       await clubCall('attSet', { group, date, marks }, getIdToken);
+      forgetPlayers();
       toast(`Посещаемость за ${fmt(date, 'd MMMM')} сохранена`);
       att.reload();
     } catch (e) { toast(e.message, { bad: true }); } finally { setBusy(false); }
