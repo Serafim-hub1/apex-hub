@@ -14,6 +14,7 @@ import '@fontsource/manrope/latin-700.css';
 import './styles/app.css';
 import App from './App';
 import { EMBED } from './config';
+import { reloadOnce } from './lib/reload';
 import { applyTheme, getTheme } from './pages/Settings';
 
 applyTheme(getTheme());
@@ -35,7 +36,7 @@ if (!EMBED && 'serviceWorker' in navigator) {
       document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
       setInterval(check, 60 * 60e3);
     },
-  })).catch(() => {});
+  })).catch(() => { reloadOnce(); });
 }
 
 createRoot(document.getElementById('root')).render(<StrictMode><App /></StrictMode>);
