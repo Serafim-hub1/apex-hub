@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, useCal
 import { DEMO, TEAM } from '../config';
 import { computeRemindAt, ymd, addDays, parseYmd, todayStr } from './dates';
 import { DEFAULT_SCHEDULE, DEFAULT_LOCATION, expandSchedule, isRule, yesterdayStr } from './schedule';
+import { reloadOnce } from './reload';
 
 const StoreCtx = createContext(null);
 export const useStore = () => useContext(StoreCtx);
@@ -38,6 +39,7 @@ export function StoreProvider({ children }) {
       unsub = b.onAuth((u) => setAuth({ status: u ? 'in' : 'out', user: u }));
     }).catch((e) => {
       console.error(e);
+      if (reloadOnce()) return; // старая версия не нашла свой модуль после выкладки — берём новую
       setAuth({ status: 'error', user: null, error: e.message });
     });
     return () => unsub();
