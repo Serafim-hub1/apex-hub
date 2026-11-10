@@ -64,7 +64,8 @@ const ACTIONS = {
   summary: () => summary_(),
   players: () => players_(),
   payRecent: () => payRecent_(),
-  payAdd: (b) => withLock_(() => payAdd_(b.pay)),
+  payAdd: (b, email) => withLock_(() => payAdd_(b.pay, email)),
+  player: (b) => player_(b.id),
   attGet: (b) => attGet_(b.group, b.date),
   attSet: (b) => withLock_(() => attSet_(b.group, b.date, b.marks)),
   leads: () => leads_(),
@@ -247,11 +248,58 @@ function payRecent_() {
   return journalRows_().reverse().slice(0, 15).map((r) => ({
     payId: String(r[0]), id: String(r[1]), fio: String(r[3]), group: String(r[4]),
     date: isDate_(r[5]) ? dmy_(r[5]) : String(r[5]), amount: num_(r[6]), status: String(r[7]),
-    method: String(r[8]), abonement: String(r[9]), comment: String(r[10] || ''),
+    method: String(r[8]), abonement: String(r[9]), comment: String(r[10] || ''), by: String(r[11] || ''),
   }));
 }
 
-function payAdd_(pay) {
+/** Карточка игрока: данные из «Игроков», все его оплаты и посещаемость по листу его группы. */
+function player_(id) {
+  id = String(id || '');
+  const row = sheet_(SHEETS.players).getDataRange().getValues().slice(1).filter((r) => String(r[0]) === id)[0];
+  if (!row) throw new Error('Игрок не найден на листе «Игроки»');
+  const s = (v) => (isDate_(v) ? dmy_(v) : String(v === null || v === undefined ? '' : v).trim());
+  const info = {
+    id: id, fio: s(row[1]), group: s(row[2]), birth: s(row[3]), age: s(row[4]), phone: s(row[5]),
+    parent: s(row[6]), parentPhone: s(row[7]), parentEmail: s(row[8]), joined: s(row[9]),
+    status: s(row[10]) || 'Активен', source: s(row[11]), comment: s(row[12]),
+  };
+  const payments = journalRows_().filter((r) => String(r[1]) === id).reverse().map((r) => ({
+    payId: String(r[0]), period: periodOf_(r), date: isDate_(r[5]) ? dmy_(r[5]) : String(r[5]), amount: num_(r[6]),
+    status: String(r[7]), method: String(r[8]), abonement: String(r[9]), comment: String(r[10] || ''), by: String(r[11] || ''),
+  }));
+  // Посещаемость: заголовки — даты (или текст «дд.мм»), строки — игроки. Пустые колонки (нет отметок ни у кого) пропускаем.
+  const visits = [];
+  const name = SHEETS.attendance(info.group);
+  const ash = ss_().getSheetByName(name);
+  if (ash) {
+    const v = ash.getDataRange().getValues();
+    const me = v.slice(1).filter((r) => String(r[0]) === id)[0];
+    if (me) {
+      for (let c = 3; c < v[0].length; c++) {
+        const h = v[0][c];
+        if (h === '' || h === null) continue;
+        const label = isDate_(h) ? Utilities.formatDate(h, TZ, 'dd.MM') : String(h).trim().slice(0, 5);
+        const anyMark = v.slice(1).some((r) => String(r[c] || '').trim() !== '');
+        if (anyMark) visits.push({ date: label, mark: String(me[c] || '').trim() });
+      }
+    }
+  }
+  return { info: info, payments: payments, visits: visits };
+}
+
+/** Имя пользователя по почте (из Firestore users), кэш на 6 часов. Если не вышло — пишем почту. */
+function ownerName_(email) {
+  email = String(email || '').toLowerCase();
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('name_' + email);
+  if (hit) return hit;
+  let name = email;
+  try { fsList_('users').forEach((u) => { if (String(u.email || '').toLowerCase() === email && u.name) name = u.name; }); } catch (e) { /* без имён */ }
+  cache.put('name_' + email, name, 21600);
+  return name;
+}
+
+function payAdd_(pay, email) {
   if (!pay || !pay.fio) throw new Error('Не указан игрок');
   const player = activePlayers_().filter((p) => p.fio === String(pay.fio).trim())[0];
   if (!player) throw new Error('Игрока «' + pay.fio + '» нет на листе «Игроки»');
@@ -262,6 +310,10 @@ function payAdd_(pay) {
   sh.getRange(row, 6, 1, 6).setValues([[
     parseYmd_(pay.date), Number(pay.amount) || 0, pay.status || 'Оплачен', pay.method || 'Перевод', pay.abonement || '', pay.comment || '',
   ]]);
+  // Колонка L «Внёс» — кто из команды записал оплату. Создаём её, если листа не хватает.
+  if (sh.getMaxColumns() < 12) sh.insertColumnsAfter(sh.getMaxColumns(), 12 - sh.getMaxColumns());
+  if (String(sh.getRange(1, 12).getValue()).trim() === '') sh.getRange(1, 12).setValue('Внёс');
+  sh.getRange(row, 12).setValue(ownerName_(email));
   SpreadsheetApp.flush();
   return { row: row };
 }
@@ -611,6 +663,6 @@ function widget_(key) {
 
 return {
   doPost: doPost_, doGet: doGet_, setup: setup_, tick: tick_, backup: backup_,
-  _test: { summary_: summary_, players_: players_, payRecent_: payRecent_, payAdd_: payAdd_, attGet_: attGet_, attSet_: attSet_, leads_: leads_, leadAdd_: leadAdd_ },
+  _test: { summary_: summary_, players_: players_, payRecent_: payRecent_, payAdd_: payAdd_, player_: player_, attGet_: attGet_, attSet_: attSet_, leads_: leads_, leadAdd_: leadAdd_ },
 };
 })();
