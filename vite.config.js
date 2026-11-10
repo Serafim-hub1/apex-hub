@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
         filename: 'sw.js',
         registerType: 'autoUpdate',
         injectRegister: false,
-        injectManifest: { globPatterns: ['**/*.{js,css,html,svg,png,woff2}'] },
+        injectManifest: { globPatterns: ['**/*.{js,css,html,svg,png,jpg,woff2}'], globIgnores: ['brand/**'] },
         manifest: {
           name: 'APEX — командный центр',
           short_name: 'APEX',

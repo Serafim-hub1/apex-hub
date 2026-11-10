@@ -1,11 +1,14 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { NavLink, Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { NavLink, Link, Outlet, useNavigate, useLocation, useNavigationType } from 'react-router-dom';
 import {
   Sun, CheckSquare, CalendarDays, Trophy, FileText, Settings, Search, Plus, CalendarPlus, FilePlus,
   Wallet, ClipboardCheck, ArrowRight, WifiOff,
 } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { todayStr } from '../lib/dates';
+import { EMBED } from '../config';
+import { reduced } from './motion';
 import { SummitMark, Wordmark } from './Brand';
 import { Avatar } from './ui';
 import { TaskEditor } from './Tasks';
@@ -45,6 +48,45 @@ const NAV = [
   { to: '/club', icon: Trophy, label: 'Клуб' },
   { to: '/notes', icon: FileText, label: 'База знаний' },
 ];
+const navIndex = (path) => NAV.findIndex((n) => (n.end ? path === n.to : path.startsWith(n.to)));
+
+/** Плавная смена раздела: ссылки внутри приложения переключаются через View Transitions (где они есть). */
+function useRouteTransitions(nav, loc) {
+  const path = useRef(loc.pathname);
+  path.current = loc.pathname;
+  useEffect(() => {
+    if (EMBED || !document.startViewTransition || reduced()) return undefined;
+    const onClick = (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target.closest?.('a[href^="#/"]');
+      if (!a || a.target) return;
+      const to = a.getAttribute('href').slice(1);
+      if (to.split('?')[0] === path.current) return; // тот же раздел — обычное поведение
+      e.preventDefault();
+      document.startViewTransition(() => flushSync(() => nav(to)));
+    };
+    document.addEventListener('click', onClick, true);
+    return () => document.removeEventListener('click', onClick, true);
+  }, [nav]);
+}
+
+/** Кнопка «+» прячется, пока листаем вниз, чтобы не закрывать содержимое, и возвращается при движении вверх. */
+function useFabHidden(pathname) {
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    setHidden(false);
+    let last = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (Math.abs(y - last) < 10) return;
+      setHidden(y > last && y > 80);
+      last = y;
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [pathname]);
+  return hidden;
+}
 
 export default function Layout() {
   const { profile, notes, demo, syncError } = useStore();
@@ -54,7 +96,13 @@ export default function Layout() {
   const counts = useMyCounts();
   const nav = useNavigate();
   const loc = useLocation();
+  const navType = useNavigationType();
   useAppBadge(counts.today);
+  useRouteTransitions(nav, loc);
+  const fabHidden = useFabHidden(loc.pathname);
+  const active = navIndex(loc.pathname);
+  // Новый раздел открывается сверху; «назад» оставляет место, где были.
+  useLayoutEffect(() => { if (navType !== 'POP') window.scrollTo(0, 0); }, [loc.pathname, navType]);
 
   const editors = useMemo(() => ({
     openTask: (t, initial) => setTask({ task: t || null, initial }),
@@ -87,8 +135,9 @@ export default function Layout() {
           <Link to="/" className="brand"><SummitMark size={30} /><Wordmark sub="Командный центр" /></Link>
           <button className="side-search" onClick={() => setCmd(true)}><Search size={15} /> Поиск и команды <kbd>⌘K</kbd></button>
           <nav className="nav">
+            <i className="nav-ind" style={{ '--i': Math.max(active, 0), opacity: active < 0 ? 0 : 1 }} />
             {NAV.map(({ to, icon: Icon, label, end }) => (
-              <NavLink key={to} to={to} end={end}>
+              <NavLink key={to} to={to} end={end} className="nav-main">
                 <Icon size={17} /> {label}
                 {to === '/' && counts.today > 0 && <span className="count hot">{counts.today}</span>}
                 {to === '/tasks' && counts.open > 0 && <span className="count">{counts.open}</span>}
@@ -133,6 +182,7 @@ export default function Layout() {
         </div>
 
         <nav className="tabbar" aria-label="Разделы">
+          <i className="tab-ind" style={{ '--i': Math.max(active, 0), opacity: active < 0 ? 0 : 1 }} />
           {NAV.map(({ to, icon: Icon, label, end }) => (
             <NavLink key={to} to={to} end={end}>
               <Icon size={22} />
@@ -142,7 +192,7 @@ export default function Layout() {
           ))}
         </nav>
         {!loc.pathname.startsWith('/settings') && (
-          <button className="fab" onClick={fabAction} aria-label="Создать"><Plus size={26} /></button>
+          <button className={`fab ${fabHidden ? 'hide' : ''}`} onClick={fabAction} aria-label="Создать"><Plus size={26} /></button>
         )}
       </div>
 
