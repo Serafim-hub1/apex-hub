@@ -26,6 +26,42 @@ export function reminderText(r) {
   return `Истекает через ${n} дн.`;
 }
 
+/** Телефон из таблицы («8926…», «7(985)261-34-24») → «79261234567» для ссылок. Пусто, если номер не похож на российский. */
+export function phoneDigits(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.length === 11 && d[0] === '8') d = '7' + d.slice(1);
+  if (d.length === 10 && d[0] === '9') d = '7' + d;
+  return d.length === 11 && d[0] === '7' ? d : '';
+}
+
+/** Кому писать об оплате: у Junior — родителю, у взрослых — самому игроку (если нет — второй номер). */
+export function payContact(info) {
+  const kid = info.group === 'Junior';
+  const first = kid ? info.parentPhone : info.phone;
+  const second = kid ? info.phone : info.parentPhone;
+  const phone = phoneDigits(first) || phoneDigits(second);
+  const who = kid && phoneDigits(first) ? info.parent : !kid && phoneDigits(first) ? info.fio : (kid ? info.fio : info.parent);
+  return { phone, who: String(who || '').trim() };
+}
+
+/** Текст напоминания об оплате. p — строка из summary (статус, «действует до»), info — карточка игрока. */
+export function reminderMessage(info, p, monthName) {
+  const kid = info.group === 'Junior';
+  const parts = String(info.fio || '').trim().split(/\s+/);
+  const childName = parts[1] || parts[0] || '';
+  const { who } = payContact(info);
+  const wp = who.split(/\s+/);
+  // В «Игроках» ФИО: Фамилия Имя Отчество → обращаемся по имени и отчеству, если они есть.
+  const hello = wp.length >= 3 ? `${wp[1]} ${wp[2]}` : wp[1] || wp[0] || '';
+  const greet = `Здравствуйте${hello ? ', ' + hello : ''}!`;
+  // Имя ребёнка в скобках — чтобы не склонять («для Александра»).
+  const forWhom = kid && childName ? ` (${childName})` : '';
+  if (p?.status === 'Оплачен' && p.until) {
+    return `${greet} Напоминаем: абонемент APEX${forWhom} действует до ${p.until}. Чтобы тренировки продолжились без перерыва, продлите его, пожалуйста. Спасибо!`;
+  }
+  return `${greet} Напоминаем об оплате тренировок APEX за ${monthName}${forWhom}. Спасибо!`;
+}
+
 export const clubConfigured = () => DEMO || Boolean(APPS_SCRIPT_URL);
 
 const CACHE = 'apex-club-cache:';
@@ -153,7 +189,7 @@ function demoClub(action, p) {
       p = p.pay;
       const pl = db.players.find((x) => x.fio === p.fio);
       db.journal.push({ payId: 'PAY-' + String(db.journal.length + 1).padStart(4, '0'), id: pl?.id || '', fio: p.fio, group: pl?.group || '',
-        date: p.date, amount: Number(p.amount), status: p.status, method: p.method, abonement: p.abonement, comment: p.comment || '' });
+        date: p.date, amount: Number(p.amount), status: p.status, method: p.method, abonement: p.abonement, comment: p.comment || '', by: 'Демо' });
       saveDemo(db);
       return { row: db.journal.length + 1 };
     }
@@ -174,6 +210,19 @@ function demoClub(action, p) {
       db.attendance[p.group + '|' + p.date] = p.marks;
       saveDemo(db);
       return { saved: Object.keys(p.marks).length };
+    }
+    case 'player': {
+      const x = db.players.find((y) => y.id === p.id);
+      if (!x) throw new Error('Игрок не найден на листе «Игроки»');
+      const visits = Object.keys(db.attendance).filter((k) => k.startsWith(x.group + '|')).sort()
+        .map((k) => ({ date: fmt(k.split('|')[1], 'dd.MM'), mark: db.attendance[k][x.id] || '' }));
+      return {
+        info: { id: x.id, fio: x.fio, group: x.group, birth: '', age: x.group === 'Junior' ? '13' : '', phone: x.phone || '',
+          parent: x.parent || '', parentPhone: x.parentPhone || '', parentEmail: '', joined: '01.09.2026', status: x.status, source: '', comment: '' },
+        payments: db.journal.filter((j) => j.id === x.id).reverse()
+          .map((j) => ({ ...j, period: j.date.slice(0, 7), date: fmt(j.date, 'dd.MM.yyyy'), by: j.by || '' })),
+        visits,
+      };
     }
     case 'leads': return db.leads;
     case 'leadAdd': {

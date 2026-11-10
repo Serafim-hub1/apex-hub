@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Wallet, RefreshCw, Plus, ClipboardCheck, UserPlus, Search, CheckCheck, Phone, FileSpreadsheet, AlertTriangle } from 'lucide-react';
+import { Wallet, RefreshCw, Plus, ClipboardCheck, UserPlus, Search, CheckCheck, Phone, FileSpreadsheet, AlertTriangle, MessageCircle, Send, Copy } from 'lucide-react';
 import { useStore } from '../lib/store';
-import { clubCall, clubConfigured, readCache, reminderText, DEFAULT_LISTS, PRICES } from '../lib/club';
+import { clubCall, clubConfigured, readCache, reminderText, reminderMessage, payContact, phoneDigits, DEFAULT_LISTS, PRICES } from '../lib/club';
 import { Modal, ModalHead, Empty, TitleArea, Collapse, useToast } from '../components/ui';
 import { todayStr, fmt, humanDay } from '../lib/dates';
 
@@ -80,7 +80,10 @@ export default function Club() {
 function Payments({ openAdd }) {
   const sum = useClub('summary');
   const recent = useClub('payRecent');
+  const pl = useClub('players'); // телефоны для кнопки «Напомнить» прямо в списке
+  const contacts = useMemo(() => Object.fromEntries((pl.data?.players || []).map((x) => [x.id, x])), [pl.data]);
   const [form, setForm] = useState(openAdd ? {} : null);
+  const [card, setCard] = useState(null);
   const [g, setG] = useState('');
   const [q, setQ] = useState('');
   const s = sum.data;
@@ -129,7 +132,7 @@ function Payments({ openAdd }) {
           {sections.filter((sec) => sec.items.length > 0).map((sec) => (
             <Collapse key={sec.key} id={`pay-${sec.key}`} title={sec.label} count={sec.items.length} defaultOpen={sec.open} forceOpen={!!q} className={`pay-sec ${sec.key}`}>
               {sec.items.map((p) => (
-                <div key={p.id} className="prow" onClick={() => setForm({ fio: p.fio, abonement: p.status !== 'Оплачен' && p.oneOff ? 'Разовая' : p.abonement })} style={{ cursor: 'pointer' }}>
+                <div key={p.id} className="prow" onClick={() => setCard(p)} style={{ cursor: 'pointer' }}>
                   <div style={{ minWidth: 0 }}>
                     <div className="n">{p.fio}</div>
                     <div className="s">
@@ -139,9 +142,12 @@ function Payments({ openAdd }) {
                       {p.status === 'Оплачен' && p.date ? ` · оплата ${p.date}` : ''}
                     </div>
                   </div>
-                  <div style={{ display: 'grid', justifyItems: 'end', gap: 3 }}>
-                    <PayPill p={p} />
-                    {p.status === 'Оплачен' && p.amount ? <span className="s num">{rub(p.amount)}</span> : null}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ display: 'grid', justifyItems: 'end', gap: 3 }}>
+                      <PayPill p={p} />
+                      {p.status === 'Оплачен' && p.amount ? <span className="s num">{rub(p.amount)}</span> : null}
+                    </div>
+                    {(p.status !== 'Оплачен' || p.reminder) && contacts[p.id] && <RemindButtons info={contacts[p.id]} row={p} compact />}
                   </div>
                 </div>
               ))}
@@ -156,7 +162,7 @@ function Payments({ openAdd }) {
             {(recent.data || []).length === 0 && <Empty>{recent.busy ? 'Загружаем…' : 'Записей пока нет.'}</Empty>}
             {(recent.data || []).map((r) => (
               <div key={r.payId} className="prow">
-                <div style={{ minWidth: 0 }}><div className="n">{r.fio}</div><div className="s">{r.date} · {r.method || '—'} · {r.abonement || '—'}</div></div>
+                <div style={{ minWidth: 0 }}><div className="n">{r.fio}</div><div className="s">{r.date} · {r.method || '—'} · {r.abonement || '—'}{r.by ? ` · внёс ${r.by}` : ''}</div></div>
                 <div style={{ display: 'grid', justifyItems: 'end' }}><b className="num">{rub(r.amount)}</b><span className="s">{r.status}</span></div>
               </div>
             ))}
@@ -172,6 +178,7 @@ function Payments({ openAdd }) {
         </Collapse>
       </div>
 
+      {card && <PlayerCard id={card.id} row={card} onClose={() => setCard(null)} onPay={(f) => { setCard(null); setForm(f); }} />}
       {form && <PayForm initial={form} onClose={() => setForm(null)} onSaved={reload} payments={payments} />}
     </>
   );
@@ -238,7 +245,7 @@ function PayForm({ initial, onClose, onSaved, payments = [] }) {
   const startAb = initial.abonement || '2 раза/нед.';
   const [player, setPlayer] = useState(null);
   const [d, setD] = useState({
-    date: todayStr(), abonement: startAb, amount: PRICES[startAb] || '',
+    date: initial.date || todayStr(), abonement: startAb, amount: PRICES[startAb] || '',
     method: 'Перевод', status: 'Оплачен', comment: '',
   });
   const [busy, setBusy] = useState(false);
@@ -308,6 +315,137 @@ function PayForm({ initial, onClose, onSaved, payments = [] }) {
   );
 }
 
+/* ───────────── Карточка игрока ───────────── */
+const MARK_CLASS = { '✓': 'y', '✕': 'n', 'У': 'u' };
+
+/** Ссылки «написать»: WhatsApp умеет подставлять текст, в Telegram текст копируем и открываем чат по номеру. */
+export function RemindButtons({ info, row, compact = false }) {
+  const toast = useToast();
+  const { phone } = payContact(info);
+  const msg = reminderMessage(info, row, fmt(todayStr().slice(0, 7) + '-01', 'LLLL'));
+  const copy = async (silent) => {
+    try { await navigator.clipboard.writeText(msg); if (!silent) toast('Текст напоминания скопирован'); return true; } catch { if (!silent) toast('Не удалось скопировать', { bad: true }); return false; }
+  };
+  const stop = (e) => e.stopPropagation();
+  if (compact) {
+    return phone
+      ? <a className="icon-btn" href={`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer" onClick={stop} aria-label={`Напомнить в WhatsApp: ${info.fio}`} title="Напомнить в WhatsApp"><MessageCircle size={17} /></a>
+      : null;
+  }
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {phone && <a className="btn sm primary" href={`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer"><MessageCircle size={15} /> WhatsApp</a>}
+      {phone && <a className="btn sm" href={`https://t.me/+${phone}`} target="_blank" rel="noreferrer" onClick={() => { copy(true).then((ok) => ok && toast('Текст скопирован — вставьте в чат')); }}><Send size={15} /> Telegram</a>}
+      <button type="button" className="btn sm ghost" onClick={() => copy(false)}><Copy size={15} /> Скопировать текст</button>
+      {!phone && <span className="muted" style={{ fontSize: 12.5, alignSelf: 'center' }}>В «Игроках» нет телефона для связи</span>}
+    </div>
+  );
+}
+
+function PlayerCard({ id, row, onClose, onPay }) {
+  const { getIdToken } = useStore();
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    let on = true;
+    clubCall('player', { id }, getIdToken).then((d) => on && setData(d)).catch((e) => on && setErr(e.message));
+    return () => { on = false; };
+  }, [id, getIdToken]);
+
+  const info = data?.info || { fio: row?.fio || '', group: row?.group || '' };
+  const visits = data?.visits || [];
+  const marked = visits.filter((v) => v.mark);
+  const was = marked.filter((v) => v.mark === '✓').length;
+  const lastVisit = [...visits].reverse().find((v) => v.mark === '✓')?.date;
+  const months = useMemo(() => {
+    const out = [];
+    (data?.payments || []).forEach((x) => {
+      let m = out[out.length - 1];
+      if (!m || m.period !== x.period) out.push(m = { period: x.period, items: [], sum: 0 });
+      m.items.push(x);
+      m.sum += x.status === 'Оплачен' ? x.amount : x.status === 'Возврат' ? -x.amount : 0;
+    });
+    return out;
+  }, [data]);
+  const needsReminder = !row || row.status !== 'Оплачен' || !!row.reminder;
+  const sub = [info.group, info.age && `${info.age} лет`, info.status && info.status !== 'Активен' && info.status, info.joined && `в клубе с ${info.joined}`].filter(Boolean).join(' · ');
+
+  return (
+    <Modal onClose={onClose}>
+      <ModalHead onClose={onClose}><span className="eyebrow acc">Карточка игрока</span></ModalHead>
+      <div className="modal-b">
+        <div>
+          <h2 className="h2" style={{ fontSize: 24 }}>{info.fio}</h2>
+          <div className="muted" style={{ fontSize: 13, marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {sub}{row && <PayPill p={row} />}
+          </div>
+        </div>
+        {err && <div className="banner warn"><AlertTriangle size={18} /><span className="grow">{err}</span></div>}
+        {!data && !err && [1, 2, 3].map((i) => <div key={i} className="skel" style={{ width: `${80 - i * 15}%` }} />)}
+
+        {data && (
+          <>
+            <div className="pc-contacts">
+              {[[info.parent || (info.group === 'Junior' ? 'Родитель' : ''), info.parentPhone], [info.group === 'Junior' ? 'Игрок' : info.fio.split(' ')[1] || 'Телефон', info.phone]]
+                .filter(([, ph]) => ph).map(([who, ph]) => (
+                  <a key={ph} className="pc-contact" href={phoneDigits(ph) ? `tel:+${phoneDigits(ph)}` : undefined}>
+                    <Phone size={15} /><span><b>{who || 'Телефон'}</b><span className="num">{ph}</span></span>
+                  </a>
+                ))}
+              {!info.parentPhone && !info.phone && <span className="muted" style={{ fontSize: 13 }}>Телефонов в «Игроках» нет.</span>}
+            </div>
+
+            <section>
+              <div className="lbl">Посещаемость</div>
+              {marked.length ? (
+                <>
+                  <div style={{ fontSize: 14, margin: '4px 0 8px' }}>
+                    Был на <b>{was}</b> из {marked.length} ({Math.round((was / marked.length) * 100)}%){lastVisit ? ` · последний раз ${lastVisit}` : ''}
+                  </div>
+                  <div className="visit-strip" aria-label="Последние тренировки">
+                    {visits.slice(-20).map((v, i) => <span key={i} className={MARK_CLASS[v.mark] || ''} title={`${v.date}: ${v.mark || 'нет отметки'}`} />)}
+                  </div>
+                </>
+              ) : <div className="muted" style={{ fontSize: 13 }}>Отметок пока нет.</div>}
+            </section>
+
+            <section>
+              <div className="lbl">Напоминание об оплате</div>
+              {needsReminder
+                ? <p className="muted" style={{ fontSize: 13, margin: '4px 0 8px' }}>{reminderMessage(info, row, fmt(todayStr().slice(0, 7) + '-01', 'LLLL'))}</p>
+                : <p className="muted" style={{ fontSize: 13, margin: '4px 0 8px' }}>Абонемент оплачен — напоминать не нужно, но написать можно.</p>}
+              <RemindButtons info={info} row={row} />
+            </section>
+
+            <section>
+              <div className="lbl">Оплаты</div>
+              {!months.length && <div className="muted" style={{ fontSize: 13 }}>Оплат в журнале нет.</div>}
+              {months.map((m) => (
+                <div key={m.period} className="pc-month">
+                  <div className="pc-month-h"><span>{fmt(m.period + '-01', 'LLLL yyyy')}</span><b className="num">{rub(m.sum)}</b></div>
+                  {m.items.map((x) => (
+                    <div key={x.payId} className="prow">
+                      <div style={{ minWidth: 0 }}>
+                        <div className="n">{x.abonement || '—'}</div>
+                        <div className="s">{[x.date, x.method, x.by && `внёс ${x.by}`, x.comment].filter(Boolean).join(' · ')}</div>
+                      </div>
+                      <div style={{ display: 'grid', justifyItems: 'end' }}><b className="num">{rub(x.amount)}</b><span className="s">{x.status}</span></div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </section>
+          </>
+        )}
+      </div>
+      <div className="modal-f">
+        <button className="btn ghost" onClick={onClose}>Закрыть</button>
+        <button className="btn primary" onClick={() => onPay({ fio: info.fio, abonement: row && row.status !== 'Оплачен' && row.oneOff ? 'Разовая' : row?.abonement })}><Plus size={15} /> Внести оплату</button>
+      </div>
+    </Modal>
+  );
+}
+
 /* ───────────── Посещаемость ───────────── */
 function Attendance() {
   const { getIdToken, events } = useStore();
@@ -318,6 +456,12 @@ function Attendance() {
   const att = useClub('attGet', { group, date });
   const [marks, setMarks] = useState({});
   const [busy, setBusy] = useState(false);
+  const [card, setCard] = useState(null);
+  const [form, setForm] = useState(null);
+  const summaryRows = useMemo(() => (readCache('summary')?.data?.payments || []).map(normPay), [form]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rowById = useMemo(() => Object.fromEntries(summaryRows.map((x) => [x.id, x])), [summaryRows]);
+  // Был на тренировке (✓), но нет ни абонемента, ни разовой оплаты за этот день
+  const unpaidHere = (p) => marks[p.id] === '✓' && p.pay === 'Не оплачен';
 
   useEffect(() => {
     if (att.data) setMarks(Object.fromEntries(att.data.players.map((p) => [p.id, p.mark || ''])));
@@ -343,7 +487,8 @@ function Attendance() {
           <div className="seg">{['Junior', 'Взрослые'].map((g) => <button key={g} className={group === g ? 'on' : ''} onClick={() => setGroup(g)}>{g}</button>)}</div>
           <input type="date" className="input" style={{ width: 170, height: 36 }} value={date} onChange={(e) => setDate(e.target.value)} id="att-date" aria-label="Дата тренировки" />
         </div>
-        <span className="muted num" style={{ fontSize: 13 }}>Пришли: <b style={{ color: 'var(--fg)' }}>{present}</b> из {att.data?.players.length ?? '—'}</span>
+        <span className="muted num" style={{ fontSize: 13 }}>Пришли: <b style={{ color: 'var(--fg)' }}>{present}</b> из {att.data?.players.length ?? '—'}
+          {att.data && att.data.players.some(unpaidHere) ? <> · <b style={{ color: 'var(--danger)' }}>{att.data.players.filter(unpaidHere).length}</b> без оплаты</> : null}</span>
       </div>
       <div className="panel-b">
         {recent.length > 0 && (
@@ -357,10 +502,12 @@ function Attendance() {
         {att.data?.players.map((p) => (
           <div key={p.id} className="att-row">
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.fio}</div>
-              {p.pay === 'Разовая оплачена' && <span className="pill ok" style={{ marginTop: 3 }}>Разовая оплачена</span>}
-              {p.pay === 'Разовые' && <span className="pill" style={{ marginTop: 3 }}>Разовые</span>}
-              {p.pay === 'Не оплачен' && <span className="pill bad" style={{ marginTop: 3 }}>Не оплачен</span>}
+              <button type="button" className="link-name" onClick={() => setCard(rowById[p.id] || { id: p.id, fio: p.fio, group })}>{p.fio}</button>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 3, flexWrap: 'wrap' }}>
+                {p.pay === 'Разовая оплачена' && <span className="pill ok">Разовая оплачена</span>}
+                {p.pay === 'Не оплачен' && <span className="pill bad">{unpaidHere(p) ? 'Был без оплаты' : 'Не оплачен'}</span>}
+                {unpaidHere(p) && <button type="button" className="btn sm" style={{ height: 24, padding: '0 8px', fontSize: 12 }} onClick={() => setForm({ fio: p.fio, abonement: 'Разовая', date })}><Plus size={13} /> Разовая</button>}
+              </div>
             </div>
             <div className="att-btns" role="group" aria-label={`Отметка: ${p.fio}`}>
               {[['✓', 'y', 'Был'], ['✕', 'n', 'Не был'], ['У', 'u', 'Уважительная причина']].map(([m, c, title]) => (
@@ -378,6 +525,8 @@ function Attendance() {
           <button className="btn primary" onClick={save} disabled={busy || !changed}>{busy ? 'Сохраняем…' : 'Сохранить в таблицу'}</button>
         </div>
       )}
+      {card && <PlayerCard id={card.id} row={card.status ? card : null} onClose={() => setCard(null)} onPay={(f) => { setCard(null); setForm({ ...f, date }); }} />}
+      {form && <PayForm initial={form} onClose={() => setForm(null)} onSaved={() => att.reload()} payments={summaryRows} />}
     </section>
   );
 }

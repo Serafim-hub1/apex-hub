@@ -556,6 +556,23 @@ textarea.title-input { resize: none; overflow: hidden; display: block; min-heigh
 .picked b { display: block; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .picked span { display: block; font-size: 12.5px; color: var(--muted); }
 
+/* ── карточка игрока ── */
+.pc-contacts { display: flex; gap: 8px; flex-wrap: wrap; }
+.pc-contact { display: flex; gap: 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); color: var(--fg); text-decoration: none; min-width: 0; flex: 1 1 200px; }
+.pc-contact svg { color: var(--accent-text); flex: none; }
+.pc-contact b { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-contact .num { font-size: 12.5px; color: var(--muted); }
+.visit-strip { display: flex; gap: 4px; flex-wrap: wrap; }
+.visit-strip span { width: 14px; height: 14px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); }
+.visit-strip span.y { background: var(--ok); border-color: transparent; }
+.visit-strip span.n { background: var(--danger); border-color: transparent; }
+.visit-strip span.u { background: var(--warn); border-color: transparent; }
+.pc-month { margin-top: 6px; }
+.pc-month-h { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 4px 2px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.pc-month-h b { color: var(--fg); font-size: 13px; letter-spacing: 0; }
+.link-name { display: block; max-width: 100%; padding: 0; border: 0; background: none; color: var(--fg); font: inherit; font-weight: 600; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-name:hover { color: var(--accent-text); }
+
 /* ── Движение: короткие, «мягкие на выходе» анимации. Только opacity/transform/clip-path — без скачков вёрстки. ── */
 :root {
   --ease: cubic-bezier(0.22, 1, 0.36, 1);      /* быстрый старт, долгое мягкое торможение */
