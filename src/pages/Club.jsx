@@ -6,29 +6,30 @@ import { clubCall, clubConfigured, readCache, reminderText, DEFAULT_LISTS, PRICE
 import { Modal, ModalHead, Empty, TitleArea, Collapse, useToast } from '../components/ui';
 import { todayStr, fmt, humanDay } from '../lib/dates';
 
-const STATUS_ORDER = { 'Не оплачен': 0, 'Разовые': 1, 'Оплачен': 2 };
-/** Группы списка абонементов. Важное открыто, остальное свёрнуто (выбор запоминается на устройстве). */
+const STATUS_ORDER = { 'Не оплачен': 0, 'Оплачен': 2 };
+/** Группы списка абонементов. Важное открыто, остальное свёрнуто (выбор запоминается на устройстве).
+ *  Разовые — не отдельная группа: это обычные оплаты занятий, статус месяца зависит только от абонемента. */
 const PAY_SECTIONS = [
-  { key: 'unpaid', label: 'Не оплатили', open: true, test: (p) => p.status !== 'Оплачен' && p.status !== 'Разовые' },
+  { key: 'unpaid', label: 'Не оплатили абонемент', open: true, test: (p) => p.status !== 'Оплачен' },
   { key: 'soon', label: 'Скоро заканчивается', open: true, test: (p) => p.status === 'Оплачен' && !!p.reminder },
-  { key: 'oneoff', label: 'Разовые', open: false, test: (p) => p.status === 'Разовые' },
   { key: 'paid', label: 'Оплатили', open: false, test: (p) => p.status === 'Оплачен' && !p.reminder },
 ];
 const LEADS_CLOSED = ['Клиент', 'Отказ'];
+/** Старые ответы скрипта (и кэш) ещё могут прислать статус «Разовые». */
+const normPay = (p) => (p.status === 'Разовые' ? { ...p, status: 'Не оплачен' } : p);
 
-/** Пилюля статуса оплаты: красная — нет оплаты, нейтральная — разовые, зелёная — абонемент. */
+const rub = (n) => (n === null || n === undefined || n === '' ? '—' : `${Number(n).toLocaleString('ru-RU')} ₽`);
+
+/** Пилюля статуса оплаты: зелёная — абонемент, нейтральная — без абонемента, но платит за разовые, красная — ничего. */
 export function PayPill({ p }) {
   if (p.status === 'Оплачен') {
     return <span className={`pill ${p.reminder ? 'warn' : 'ok'}`}><span className="pdot" />{p.reminder ? reminderText(p.reminder) : 'Оплачен'}</span>;
   }
-  if (p.status === 'Разовые') {
-    const o = p.oneOff;
-    return <span className="pill"><span className="pdot" />Разовые{o ? ` · ${o.count}` : ''}</span>;
+  if (p.oneOff?.sum) {
+    return <span className="pill"><span className="pdot" />Разовые · {rub(p.oneOff.sum)}</span>;
   }
   return <span className="pill bad"><span className="pdot" />{p.status || 'Не оплачен'}</span>;
 }
-
-const rub = (n) => (n === null || n === undefined || n === '' ? '—' : `${Number(n).toLocaleString('ru-RU')} ₽`);
 
 function useClub(action, payload) {
   const { getIdToken } = useStore();
@@ -83,12 +84,13 @@ function Payments({ openAdd }) {
   const [g, setG] = useState('');
   const [q, setQ] = useState('');
   const s = sum.data;
+  const payments = useMemo(() => (s?.payments || []).map(normPay), [s]);
 
-  const list = useMemo(() => (s?.payments || []).filter((p) => {
+  const list = useMemo(() => payments.filter((p) => {
     if (g && p.group !== g) return false;
     if (q && !p.fio.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
-  }).sort((a, b) => (STATUS_ORDER[a.status] ?? 1) - (STATUS_ORDER[b.status] ?? 1) || a.fio.localeCompare(b.fio, 'ru')), [s, g, q]);
+  }).sort((a, b) => (STATUS_ORDER[a.status] ?? 1) - (STATUS_ORDER[b.status] ?? 1) || !!a.oneOff - !!b.oneOff || a.fio.localeCompare(b.fio, 'ru')), [payments, g, q]);
   const sections = useMemo(() => PAY_SECTIONS.map((sec) => ({ ...sec, items: list.filter(sec.test) })), [list]);
 
   const reload = () => { sum.reload(); recent.reload(); };
@@ -99,7 +101,7 @@ function Payments({ openAdd }) {
       <div className="kpis">
         <div className="kpi"><b>{s ? s.kpi.active : '—'}</b><span>активных игроков</span></div>
         <div className="kpi hot"><b>{s ? s.kpi.paid : '—'}</b><span>оплатили за {s ? fmt(s.month + '-01', 'LLLL') : 'месяц'}</span></div>
-        <div className={`kpi ${s?.kpi.unpaid ? 'bad' : ''}`}><b>{s ? s.kpi.unpaid : '—'}</b><span>не оплатили{s?.kpi.oneOff ? ` · ещё ${s.kpi.oneOff} на разовых` : ''}</span></div>
+        <div className={`kpi ${s?.kpi.unpaid ? 'bad' : ''}`}><b>{s ? s.kpi.unpaid : '—'}</b><span>без абонемента{s?.kpi.oneOff ? ` · ${s.kpi.oneOff} ходят разово` : ''}</span></div>
         <div className="kpi"><b className="num">{s ? `${Math.round(s.kpi.revenue / 100) / 10}к` : '—'}</b><span>₽ выручка месяца</span></div>
       </div>
 
@@ -127,19 +129,19 @@ function Payments({ openAdd }) {
           {sections.filter((sec) => sec.items.length > 0).map((sec) => (
             <Collapse key={sec.key} id={`pay-${sec.key}`} title={sec.label} count={sec.items.length} defaultOpen={sec.open} forceOpen={!!q} className={`pay-sec ${sec.key}`}>
               {sec.items.map((p) => (
-                <div key={p.id} className="prow" onClick={() => setForm({ fio: p.fio, abonement: p.status === 'Разовые' ? 'Разовая' : p.abonement })} style={{ cursor: 'pointer' }}>
+                <div key={p.id} className="prow" onClick={() => setForm({ fio: p.fio, abonement: p.status !== 'Оплачен' && p.oneOff ? 'Разовая' : p.abonement })} style={{ cursor: 'pointer' }}>
                   <div style={{ minWidth: 0 }}>
                     <div className="n">{p.fio}</div>
                     <div className="s">
                       {p.group}
-                      {p.status === 'Разовые' && p.oneOff ? ` · разовых в этом месяце: ${p.oneOff.count}, последнее ${p.oneOff.last}` : ''}
+                      {p.status !== 'Оплачен' && p.oneOff ? ` · разовых: ${p.oneOff.count}, последнее ${p.oneOff.last}` : ''}
                       {p.status === 'Оплачен' && p.abonement ? ` · ${p.abonement}` : ''}
                       {p.status === 'Оплачен' && p.date ? ` · оплата ${p.date}` : ''}
                     </div>
                   </div>
                   <div style={{ display: 'grid', justifyItems: 'end', gap: 3 }}>
                     <PayPill p={p} />
-                    {p.amount ? <span className="s num">{rub(p.amount)}</span> : null}
+                    {p.status === 'Оплачен' && p.amount ? <span className="s num">{rub(p.amount)}</span> : null}
                   </div>
                 </div>
               ))}
@@ -170,7 +172,7 @@ function Payments({ openAdd }) {
         </Collapse>
       </div>
 
-      {form && <PayForm initial={form} onClose={() => setForm(null)} onSaved={reload} payments={s?.payments || []} />}
+      {form && <PayForm initial={form} onClose={() => setForm(null)} onSaved={reload} payments={payments} />}
     </>
   );
 }
@@ -194,7 +196,7 @@ function PlayerPicker({ players, loading, value, onChange, statusById }) {
       <div className="picked">
         <div style={{ minWidth: 0, flex: 1 }}>
           <b>{value.fio}</b>
-          <span>{value.group}{st ? ` · ${st.status === 'Разовые' && st.oneOff ? `разовых: ${st.oneOff.count}` : st.status}` : ''}</span>
+          <span>{value.group}{st ? ` · ${st.status !== 'Оплачен' && st.oneOff ? `разовых: ${st.oneOff.count} на ${rub(st.oneOff.sum)}` : st.status}` : ''}</span>
         </div>
         <button type="button" className="btn sm" onClick={() => { setEditing(true); setQ(''); }}>Сменить</button>
       </div>
@@ -253,7 +255,8 @@ function PayForm({ initial, onClose, onSaved, payments = [] }) {
   const pick = (p) => {
     setPlayer(p);
     const st = statusById[p.id];
-    const ab = st?.status === 'Разовые' ? 'Разовая' : d.abonement;
+    // Кто в этом месяце ходит разово — скорее всего платит ещё за одно разовое. Абонемент выбирается вручную.
+    const ab = st && st.status !== 'Оплачен' && st.oneOff ? 'Разовая' : d.abonement;
     set({ abonement: ab, amount: priceFor(ab, p.group) ?? d.amount });
   };
 

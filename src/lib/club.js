@@ -111,16 +111,17 @@ function demoSummary(db) {
   const active = db.players.filter((p) => p.status === 'Активен');
   const payments = active.map((p) => {
     const mine = db.journal.filter((j) => j.id === p.id && j.date.startsWith(month) && j.status === 'Оплачен');
-    // Разовые оплаты не делают игрока «оплатившим месяц» — как в таблице.
+    // Разовые оплаты не делают игрока «оплатившим месяц» — как в таблице. Это отдельные оплаты занятий.
     const paid = [...mine].reverse().find((j) => j.abonement !== 'Разовая');
     const once = mine.filter((j) => j.abonement === 'Разовая');
-    const status = paid ? 'Оплачен' : once.length ? 'Разовые' : 'Не оплачен';
+    const status = paid ? 'Оплачен' : 'Не оплачен';
     return {
       id: p.id, fio: p.fio, group: p.group, period: month, status,
       date: paid ? fmt(paid.date, 'dd.MM.yyyy') : '', amount: paid ? paid.amount : null, method: paid?.method || '',
       abonement: paid?.abonement || '', until: paid ? fmt(end, 'dd.MM.yyyy') : '', daysLeft: paid ? daysLeft : null,
-      reminder: status === 'Не оплачен' ? '⚠ Не оплачен' : paid && daysLeft <= 5 ? `⚠ Через ${daysLeft} дн.` : '',
-      oneOff: once.length ? { count: once.length, last: fmt(once.map((j) => j.date).sort().pop(), 'dd.MM.yyyy') } : null,
+      reminder: !paid && !once.length ? '⚠ Не оплачен' : paid && daysLeft <= 5 ? `⚠ Через ${daysLeft} дн.` : '',
+      oneOff: once.length ? { count: once.length, sum: once.reduce((s, j) => s + j.amount, 0), last: fmt(once.map((j) => j.date).sort().pop(), 'dd.MM.yyyy') } : null,
+      paidMonth: mine.reduce((s, j) => s + j.amount, 0),
     };
   });
   const paidN = payments.filter((p) => p.status === 'Оплачен').length;
@@ -130,7 +131,7 @@ function demoSummary(db) {
     kpi: {
       active: active.length, junior: active.filter((p) => p.group === 'Junior').length,
       adults: active.filter((p) => p.group === 'Взрослые').length, paused: db.players.filter((p) => p.status === 'Пауза').length,
-      paid: paidN, unpaid: payments.filter((p) => p.status === 'Не оплачен').length, oneOff: payments.filter((p) => p.status === 'Разовые').length, revenue, alerts: payments.filter((p) => p.reminder).length,
+      paid: paidN, unpaid: payments.filter((p) => p.status === 'Не оплачен').length, oneOff: payments.filter((p) => p.status !== 'Оплачен' && p.oneOff).length, revenue, alerts: payments.filter((p) => p.reminder).length,
       newLeads: db.leads.filter((l) => l.status === 'Новая').length, trials: db.leads.filter((l) => l.status === 'Пробная назначена').length,
       attJunior: 0.82, attAdults: 0.7,
     },
