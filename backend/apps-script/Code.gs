@@ -167,7 +167,8 @@ function summary_() {
   disp.forEach((r, i) => {
     if (!r[0] || !r[1]) return;
     payments.push({
-      id: r[0], fio: r[1], group: r[2], period: r[3], status: r[4], date: r[5],
+      // «Разовые» — старый статус из формул до 10.11.2026; теперь это просто «Не оплачен» с внесёнными деньгами
+      id: r[0], fio: r[1], group: r[2], period: r[3], status: r[4] === 'Разовые' ? 'Не оплачен' : r[4], date: r[5],
       amount: vals[i][6] === '' ? null : num_(vals[i][6]), method: r[7], abonement: r[8], until: r[9],
       daysLeft: r[10] === '' ? null : Number(r[10]), reminder: r[11],
     });
@@ -176,20 +177,22 @@ function summary_() {
   const active = players.filter((p) => p.status !== 'Пауза' && p.status !== 'Выбыл');
   const month = thisMonth_();
   let revenue = 0;
-  const oneOff = {}; // ID игрока → { count, last } — разовые оплаты в этом месяце
+  const oneOff = {}; // ID игрока → { count, sum, last } — разовые оплаты в этом месяце (с абонементом не связаны)
+  const paidMonth = {}; // ID игрока → всего внесено за месяц (все оплаты минус возвраты)
   journalRows_().forEach((r) => {
     if (periodOf_(r) !== month) return;
-    if (r[7] === 'Оплачен') revenue += num_(r[6]);
-    if (r[7] === 'Возврат') revenue -= num_(r[6]);
+    const id = String(r[1]);
+    if (r[7] === 'Оплачен') { revenue += num_(r[6]); paidMonth[id] = (paidMonth[id] || 0) + num_(r[6]); }
+    if (r[7] === 'Возврат') { revenue -= num_(r[6]); paidMonth[id] = (paidMonth[id] || 0) - num_(r[6]); }
     if (r[7] === 'Оплачен' && isOneOff_(r)) {
-      const id = String(r[1]);
       const d = isDate_(r[5]) ? dmy_(r[5]) : String(r[5]);
-      const o = oneOff[id] || (oneOff[id] = { count: 0, last: '' });
+      const o = oneOff[id] || (oneOff[id] = { count: 0, sum: 0, last: '' });
       o.count++;
+      o.sum += num_(r[6]);
       if (!o.last || d.split('.').reverse().join('') > o.last.split('.').reverse().join('')) o.last = d;
     }
   });
-  payments.forEach((p) => { p.oneOff = oneOff[p.id] || null; });
+  payments.forEach((p) => { p.oneOff = oneOff[p.id] || null; p.paidMonth = paidMonth[p.id] || 0; });
   const leadStatuses = column_(sheet_(SHEETS.leads), 7);
   const league = [];
   SHEETS.leagues.forEach((name) => {
@@ -209,7 +212,7 @@ function summary_() {
       paused: players.filter((p) => p.status === 'Пауза').length,
       paid: payments.filter((p) => p.status === 'Оплачен').length,
       unpaid: payments.filter((p) => p.status === 'Не оплачен').length,
-      oneOff: payments.filter((p) => p.status === 'Разовые').length,
+      oneOff: payments.filter((p) => p.status !== 'Оплачен' && p.oneOff).length,
       revenue: revenue,
       alerts: payments.filter((p) => p.reminder).length,
       newLeads: leadStatuses.filter((s) => s === 'Новая').length,
@@ -289,7 +292,7 @@ function attGet_(group, date) {
     exists: c >= 0,
     players: v.slice(1).filter((r) => r[0] && r[1]).map((r) => ({
       id: String(r[0]), fio: String(r[1]), mark: c >= 0 ? String(r[c] || '') : '',
-      pay: paidThatDay[String(r[0])] ? 'Разовая оплачена' : String(r[2] || ''),
+      pay: paidThatDay[String(r[0])] ? 'Разовая оплачена' : String(r[2] || '').replace('Разовые', 'Не оплачен'),
     })),
   };
 }
