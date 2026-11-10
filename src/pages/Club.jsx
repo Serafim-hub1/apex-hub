@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Wallet, RefreshCw, Plus, ClipboardCheck, UserPlus, Search, CheckCheck, Phone, FileSpreadsheet, AlertTriangle, MessageCircle, Send, Copy } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { clubCall, clubConfigured, readCache, reminderText, reminderMessage, payContact, phoneDigits, DEFAULT_LISTS, PRICES } from '../lib/club';
-import { Modal, ModalHead, Empty, TitleArea, Collapse, useToast } from '../components/ui';
+import { Modal, ModalHead, Empty, TitleArea, Collapse, SkelRows, useToast } from '../components/ui';
 import { todayStr, fmt, humanDay } from '../lib/dates';
 import { CountUp } from '../components/motion';
 
@@ -103,10 +103,10 @@ function Payments({ openAdd }) {
     <>
       {sum.err && <div className="banner warn" style={{ marginBottom: 14 }}><AlertTriangle size={18} /><span className="grow">{sum.err}</span><button className="btn sm" onClick={reload}>Повторить</button></div>}
       <div className="statbar" style={{ marginBottom: 16 }}>
-        <div className="stat"><b><CountUp value={s?.kpi.active} /></b><span>игроков</span></div>
-        <div className="stat hot"><b><CountUp value={s?.kpi.paid} /></b><span>оплатили</span></div>
-        <div className={`stat ${s?.kpi.unpaid ? 'bad' : ''}`}><b><CountUp value={s?.kpi.unpaid} /></b><span>без абонемента</span></div>
-        <div className="stat"><b className="num"><CountUp value={s?.kpi.revenue} format={(n) => `${n >= 1e5 ? Math.round(n / 1000) : Math.round(n / 100) / 10}к`} /></b><span>₽ за месяц</span></div>
+        <div className="stat"><b>{s ? <CountUp value={s.kpi.active} /> : <i className="skel num" />}</b><span>игроков</span></div>
+        <div className="stat hot"><b>{s ? <CountUp value={s.kpi.paid} /> : <i className="skel num" />}</b><span>оплатили</span></div>
+        <div className={`stat ${s?.kpi.unpaid ? 'bad' : ''}`}><b>{s ? <CountUp value={s.kpi.unpaid} /> : <i className="skel num" />}</b><span>без абонемента</span></div>
+        <div className="stat"><b className="num">{s ? <CountUp value={s.kpi.revenue} format={(n) => `${n >= 1e5 ? Math.round(n / 1000) : Math.round(n / 100) / 10}к`} /> : <i className="skel num" />}</b><span>₽ за месяц</span></div>
         {s && (s.kpi.paid + s.kpi.unpaid) > 0 && (
           <div className="meter">
             <div className="meter-h">
@@ -139,7 +139,7 @@ function Payments({ openAdd }) {
               <input className="input" placeholder="Найти игрока" value={q} onChange={(e) => setQ(e.target.value)} id="pay-search" />
             </div>
           </div>
-          {!s && sum.busy && [1, 2, 3, 4].map((i) => <div key={i} className="skel" style={{ margin: '16px 0', width: `${90 - i * 10}%` }} />)}
+          {!s && sum.busy && <SkelRows n={5} pill />}
           {s && list.length === 0 && <Empty>По этому фильтру никого.</Empty>}
           {sections.filter((sec) => sec.items.length > 0).map((sec) => (
             <Collapse key={sec.key} id={`pay-${sec.key}`} title={sec.label} count={sec.items.length} defaultOpen={sec.open} forceOpen={!!q} className={`pay-sec ${sec.key}`}>
@@ -171,7 +171,8 @@ function Payments({ openAdd }) {
       <div className="dash">
         <Collapse id="pay-recent" className="panel" defaultOpen={false} title={<span className="h2">Последние оплаты</span>} count={recent.data?.length}>
           <div className="panel-b">
-            {(recent.data || []).length === 0 && <Empty>{recent.busy ? 'Загружаем…' : 'Записей пока нет.'}</Empty>}
+            {!recent.data && recent.busy && <SkelRows n={3} pill dense />}
+            {!(recent.busy && !recent.data) && (recent.data || []).length === 0 && <Empty icon={Wallet}>Записей пока нет.</Empty>}
             {(recent.data || []).map((r) => (
               <div key={r.payId} className="prow">
                 <div style={{ minWidth: 0 }}><div className="n">{r.fio}</div><div className="s">{r.date} · {r.method || '—'} · {r.abonement || '—'}{r.by ? ` · внёс ${r.by}` : ''}</div></div>
@@ -182,7 +183,8 @@ function Payments({ openAdd }) {
         </Collapse>
         <Collapse id="pay-league" className="panel" title={<span className="h2">Долги по лиге</span>} count={s?.league?.length}>
           <div className="panel-b">
-            {(s?.league || []).length === 0 && <Empty>Долгов нет.</Empty>}
+            {!s && sum.busy && <SkelRows n={2} pill dense />}
+            {s && (s.league || []).length === 0 && <Empty icon={CheckCheck}>Долгов нет.</Empty>}
             {(s?.league || []).map((l, i) => (
               <div key={i} className="alert-row"><span className="pill">{l.league}</span><span className="n">{l.fio}</span><b className="num" style={{ color: 'var(--danger)' }}>{rub(l.debt)}</b></div>
             ))}
@@ -228,7 +230,7 @@ function PlayerPicker({ players, loading, value, onChange, statusById }) {
         <input id="pay-fio" className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Фамилия или имя" autoComplete="off" />
       </div>
       <div className="picker-list" role="listbox" aria-label="Игроки">
-        {loading && !players.length && [1, 2, 3].map((i) => <div key={i} className="skel" style={{ margin: 12, width: '60%' }} />)}
+        {loading && !players.length && <div style={{ padding: '0 12px' }}><SkelRows n={3} dense /></div>}
         {!loading && !matches.length && <div className="empty" style={{ padding: 14 }}>Никого не нашли</div>}
         {matches.map((p) => {
           const st = statusById[p.id];
@@ -393,7 +395,7 @@ function PlayerCard({ id, row, onClose, onPay }) {
           </div>
         </div>
         {err && <div className="banner warn"><AlertTriangle size={18} /><span className="grow">{err}</span></div>}
-        {!data && !err && [1, 2, 3].map((i) => <div key={i} className="skel" style={{ width: `${80 - i * 15}%` }} />)}
+        {!data && !err && <SkelRows n={4} pill dense />}
 
         {data && (
           <>
@@ -509,8 +511,8 @@ function Attendance() {
           </div>
         )}
         {att.err && <div className="banner warn"><AlertTriangle size={18} /><span className="grow">{att.err}</span></div>}
-        {att.busy && !att.data && [1, 2, 3].map((i) => <div key={i} className="skel" style={{ margin: '18px 0', width: '70%' }} />)}
-        {att.data && att.data.players.length === 0 && <Empty>В группе нет активных игроков.</Empty>}
+        {att.busy && !att.data && <SkelRows n={6} pill />}
+        {att.data && att.data.players.length === 0 && <Empty icon={ClipboardCheck}>В группе нет активных игроков.</Empty>}
         {att.data?.players.map((p) => (
           <div key={p.id} className="att-row">
             <div style={{ minWidth: 0 }}>
@@ -562,6 +564,7 @@ function Leads() {
           return (
             <Collapse key={s} id={`lead-${s}`} className="col lead-col" title={s} count={items.length} defaultOpen={!LEADS_CLOSED.includes(s)}>
               <div className="col-cards">
+                {!leads.data && leads.busy && <i className="skel card" />}
                 {items.map((l) => (
                   <div key={l.row} className="lead-card" onClick={() => setEdit(l)}>
                     <b>{l.fio || 'Без имени'}</b>
