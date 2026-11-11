@@ -228,7 +228,7 @@ function ScreenInfo() {
       const vv = window.visualViewport;
       setInfo([
         `экран ${screen.width}×${screen.height}`,
-        `окно ${innerWidth}×${innerHeight}, видимая область ${Math.round(vv?.height || 0)}`,
+        `окно ${innerWidth}×${innerHeight}, видимая область ${Math.round(vv?.height || 0)}, страница ${document.documentElement.scrollHeight}`,
         `низ «фиксированного» слоя ${fixedBottom}`,
         `отступ сверху ${sat}, снизу ${sab}`,
         `меню: верх ${Math.round(tab?.top || 0)}, низ ${Math.round(tab?.bottom || 0)}`,
