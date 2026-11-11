@@ -55,7 +55,10 @@ function useRouteTransitions(nav, loc) {
   const path = useRef(loc.pathname);
   path.current = loc.pathname;
   useEffect(() => {
-    if (EMBED || !document.startViewTransition || reduced()) return undefined;
+    // На iPhone/iPad (особенно в приложении «Домой») переходы сдвигают меню и «+» — под ними остаётся пустое место. Там без них.
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (EMBED || ios || !document.startViewTransition || reduced()) return undefined;
+    document.documentElement.classList.add('vt'); // имена для переходов в CSS включаются только вместе с ними
     const onClick = (e) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       const a = e.target.closest?.('a[href^="#/"]');
@@ -66,7 +69,7 @@ function useRouteTransitions(nav, loc) {
       document.startViewTransition(() => flushSync(() => nav(to)));
     };
     document.addEventListener('click', onClick, true);
-    return () => document.removeEventListener('click', onClick, true);
+    return () => { document.removeEventListener('click', onClick, true); document.documentElement.classList.remove('vt'); };
   }, [nav]);
 }
 
