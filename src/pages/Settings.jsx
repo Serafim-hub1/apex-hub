@@ -201,11 +201,48 @@ export default function Settings() {
           </div>
         </section>
 
+        <ScreenInfo />
+
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn" onClick={signOut}><LogOut size={16} /> Выйти из аккаунта</button>
           {demo && resetDemo && <button className="btn ghost" onClick={() => { resetDemo(); toast('Демо-данные сброшены'); }}><RotateCcw size={16} /> Сбросить демо-данные</button>}
         </div>
       </div>
     </div>
+  );
+}
+
+/** Замеры экрана — чтобы по скриншоту понять, откуда берётся лишнее место снизу на телефоне. */
+function ScreenInfo() {
+  const [info, setInfo] = useState('');
+  useEffect(() => {
+    const measure = () => {
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;padding-bottom:env(safe-area-inset-bottom,0px);padding-top:env(safe-area-inset-top,0px);visibility:hidden';
+      document.body.appendChild(probe);
+      const cs = getComputedStyle(probe);
+      const sab = cs.paddingBottom; const sat = cs.paddingTop;
+      const fixedBottom = Math.round(probe.getBoundingClientRect().bottom);
+      probe.remove();
+      const tab = document.querySelector('.tabbar')?.getBoundingClientRect();
+      const vv = window.visualViewport;
+      setInfo([
+        `экран ${screen.width}×${screen.height}`,
+        `окно ${innerWidth}×${innerHeight}, видимая область ${Math.round(vv?.height || 0)}`,
+        `низ «фиксированного» слоя ${fixedBottom}`,
+        `отступ сверху ${sat}, снизу ${sab}`,
+        `меню: верх ${Math.round(tab?.top || 0)}, низ ${Math.round(tab?.bottom || 0)}`,
+        `приложение: ${isStandalone() ? 'да' : 'нет'}`,
+      ].join('\n'));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+  return (
+    <section className="panel">
+      <div className="panel-h"><h2 className="h2">Экран (для диагностики)</h2></div>
+      <div className="panel-b"><pre style={{ margin: 0, fontSize: 12.5, whiteSpace: 'pre-wrap', color: 'var(--muted)', userSelect: 'text' }}>{info}</pre></div>
+    </section>
   );
 }

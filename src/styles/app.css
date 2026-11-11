@@ -40,6 +40,8 @@
   --r-lg: 14px;
   --side: 248px;
   --tab-h: 62px;
+  /* нижний отступ под полоску iPhone: не больше штатных 34px (на некоторых версиях iOS в приложении «Домой» приходит завышенное значение) */
+  --sab: min(env(safe-area-inset-bottom, 0px), 34px);
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
@@ -170,7 +172,7 @@ a { color: var(--accent-text); }
   .tabbar {
     --tb-l: max(6px, env(safe-area-inset-left)); --tb-r: max(6px, env(safe-area-inset-right));
     display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-    padding: 6px var(--tb-r) calc(env(safe-area-inset-bottom) + 4px) var(--tb-l);
+    padding: 6px var(--tb-r) calc(var(--sab) + 4px) var(--tb-l);
     background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid var(--line);
   }
@@ -185,7 +187,7 @@ a { color: var(--accent-text); }
   }
   .tab-ind::before { content: ''; position: absolute; top: -1px; left: 50%; width: 30px; margin-left: -15px; height: 3px; border-radius: 0 0 3px 3px; background: var(--accent); }
   .tabbar .dot { position: absolute; top: 2px; left: calc(50% + 8px); min-width: 16px; height: 16px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-size: 10px; font-weight: 800; display: grid; place-items: center; padding: 0 4px; }
-  .page { padding-top: 18px; padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 84px); }
+  .page { padding-top: 18px; padding-bottom: calc(var(--tab-h) + var(--sab) + 84px); }
   .hide-m { display: none !important; }
 }
 @media (min-width: 900px) { .hide-d { display: none !important; } }
@@ -215,7 +217,7 @@ a { color: var(--accent-text); }
 }
 .icon-btn:hover { background: var(--hover); color: var(--fg); }
 .fab {
-  position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 18px); z-index: 31;
+  position: fixed; right: max(18px, env(safe-area-inset-right)); bottom: calc(var(--tab-h) + var(--sab) + 18px); z-index: 31;
   width: 56px; height: 56px; border-radius: 18px; border: 0; background: var(--accent); color: var(--accent-ink);
   display: grid; place-items: center; box-shadow: 0 10px 30px rgba(88, 214, 255, 0.28); cursor: pointer;
 }
@@ -357,7 +359,7 @@ table.db select.inline { border: 0; background: none; color: inherit; font-weigh
   /* Высота подложки = видимая область (её задаёт Modal через visualViewport, чтобы клавиатура не закрывала кнопку). */
   .overlay { align-items: flex-end; padding: 0; inset: var(--vvt, 0px) 0 auto 0; height: var(--vvh, 100%); }
   .modal { width: 100%; max-height: 94%; border-radius: 18px 18px 0 0; animation: sheet .22s ease-out; }
-  .modal-f { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .modal-f { padding-bottom: calc(12px + var(--sab)); }
   .modal-f .btn.primary { flex: 1 1 auto; min-height: 44px; }
   .modal::before { content: ''; display: block; width: 38px; height: 4px; border-radius: 2px; background: var(--line-strong); margin: 8px auto 0; flex: none; }
 }
@@ -589,7 +591,7 @@ table.db select.inline { border: 0; background: none; color: inherit; font-weigh
 .codebox code { flex: 1; white-space: nowrap; }
 
 /* ── тосты ── */
-.toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 86px); z-index: 80; display: grid; gap: 8px; width: min(420px, calc(100% - 32px)); }
+.toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--tab-h) + var(--sab) + 86px); z-index: 80; display: grid; gap: 8px; width: min(420px, calc(100% - 32px)); }
 @media (min-width: 900px) { .toasts { bottom: 24px; } }
 .toast { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 12px; background: var(--fg); color: var(--bg); font-weight: 600; font-size: 14px; box-shadow: var(--shadow); animation: rise .18s ease-out; }
 .toast button { margin-left: auto; border: 0; background: none; color: inherit; font-weight: 800; cursor: pointer; text-decoration: underline; }
