@@ -65,8 +65,14 @@ export function reminderMessage(info, p, monthName) {
 export const clubConfigured = () => DEMO || Boolean(APPS_SCRIPT_URL);
 
 const CACHE = 'apex-club-cache:';
+/** Ответ таблицы нужной формы? Иначе страницы, читающие kpi/payments, падают целиком. */
+const SHAPE = { summary: (d) => Boolean(d && d.kpi && Array.isArray(d.payments)) };
+const shapeOk = (action, data) => !SHAPE[action] || SHAPE[action](data);
 export function readCache(key) {
-  try { return JSON.parse(localStorage.getItem(CACHE + key)); } catch { return null; }
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE + key));
+    return c && shapeOk(key, c.data) ? c : null; // кэш в старой форме игнорируем
+  } catch { return null; }
 }
 function writeCache(key, data) {
   try { localStorage.setItem(CACHE + key, JSON.stringify({ at: Date.now(), data })); } catch { /* */ }
@@ -93,6 +99,7 @@ export async function clubCall(action, payload = {}, getIdToken) {
   const json = await res.json().catch(() => null);
   if (!json) throw new Error('Таблица ответила непонятно. Проверьте, что Apps Script опубликован как веб-приложение с доступом «Все».');
   if (!json.ok) throw new Error(json.error || 'Ошибка таблицы');
+  if (!shapeOk(action, json.data)) throw new Error('Таблица прислала ответ в неожиданной форме. Нажмите «Повторить»; если не проходит — скрипт таблицы не обновился.');
   if (['summary', 'players', 'leads', 'payRecent'].includes(action)) writeCache(action, json.data);
   return json.data;
 }
