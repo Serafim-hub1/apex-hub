@@ -85,7 +85,7 @@ function Tree({ kids, parent, depth }) {
 }
 
 function NotesHome({ kids }) {
-  const { userById } = useStore();
+  const { userById, loaded } = useStore();
   const top = kids.root || [];
   return (
     <>

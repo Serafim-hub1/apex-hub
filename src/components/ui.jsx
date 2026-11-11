@@ -1,6 +1,28 @@
-import { createContext, forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Component, createContext, forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Check, ChevronDown } from 'lucide-react';
 import { useStore } from '../lib/store';
+
+/* ── Защита от «белого экрана»: если страница упала, остальное приложение живо ── */
+export class ErrorBoundary extends Component {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(e) { console.error('Страница упала:', e); }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="page">
+        <div className="banner warn" style={{ display: 'grid', gap: 10 }}>
+          <span>Этот раздел не открылся из-за ошибки. Остальное приложение работает.</span>
+          <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn sm" onClick={() => this.setState({ failed: false })}>Попробовать ещё раз</button>
+            <button className="btn sm ghost" onClick={() => window.location.reload()}>Перезагрузить</button>
+          </span>
+        </div>
+      </div>
+    );
+  }
+}
 
 /* ── Аватар ── */
 export function Avatar({ user, size = '', title }) {
@@ -25,19 +47,35 @@ export function AvatarStack({ ids = [], max = 3 }) {
 /* ── Модальное окно / нижняя шторка ── */
 export function Modal({ onClose, children, size = '', labelledBy }) {
   const ref = useRef(null);
+  const overlayRef = useRef(null);
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+    // iPhone: клавиатура уменьшает только «видимую» область, а шторка остаётся на весь экран и кнопка уезжает под клавиатуру.
+    // Подгоняем высоту подложки под видимую область — тогда шторка (и кнопка внизу) всегда на виду.
+    const vv = window.visualViewport;
+    const fit = () => {
+      const el = overlayRef.current; if (!el || !vv) return;
+      el.style.setProperty('--vvh', `${Math.round(vv.height)}px`);
+      el.style.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`);
+    };
+    fit();
+    vv?.addEventListener('resize', fit); vv?.addEventListener('scroll', fit);
+    return () => {
+      document.removeEventListener('keydown', onKey); document.body.style.overflow = prev;
+      vv?.removeEventListener('resize', fit); vv?.removeEventListener('scroll', fit);
+    };
   }, [onClose]);
-  return (
-    <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+  // Рисуем поверх всего приложения (в body): у страниц свой слой, и без этого нижняя панель и «+» перекрывали кнопки окна.
+  return createPortal(
+    <div className="overlay" ref={overlayRef} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={`modal ${size}`} role="dialog" aria-modal="true" aria-labelledby={labelledBy} ref={ref}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 export function ModalHead({ children, onClose }) {

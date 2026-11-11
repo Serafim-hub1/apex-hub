@@ -10,7 +10,7 @@ import { todayStr } from '../lib/dates';
 import { EMBED } from '../config';
 import { reduced } from './motion';
 import { SummitMark, Wordmark } from './Brand';
-import { Avatar } from './ui';
+import { Avatar, ErrorBoundary } from './ui';
 import { TaskEditor } from './Tasks';
 import { EventEditor } from './EventEditor';
 
@@ -178,7 +178,7 @@ export default function Layout() {
             </div>
           )}
           {/* key по адресу — при переходе между разделами страница заново проигрывает вход */}
-          <div className="route" key={loc.pathname}><Outlet /></div>
+          <div className="route" key={loc.pathname}><ErrorBoundary><Outlet /></ErrorBoundary></div>
         </div>
 
         <nav className="tabbar" aria-label="Разделы">

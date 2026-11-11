@@ -342,20 +342,23 @@ table.db select.inline { border: 0; background: none; color: inherit; font-weigh
 .add-inline:hover { background: var(--hover); color: var(--fg); }
 
 /* ── модальные окна / нижние шторки ── */
-.overlay { position: fixed; inset: 0; z-index: 60; background: var(--overlay); display: flex; align-items: center; justify-content: center; padding: 20px; animation: fade .15s ease-out; }
+.overlay { position: fixed; inset: 0; z-index: 60; background: var(--overlay); display: flex; align-items: center; justify-content: center; padding: 20px; animation: fade .15s ease-out; overscroll-behavior: contain; touch-action: none; }
 .modal {
-  width: min(640px, 100%); max-height: min(88vh, 900px); overflow: auto; background: var(--surface); border: 1px solid var(--line);
+  width: min(640px, 100%); max-height: min(88vh, 900px); overflow: hidden; background: var(--surface); border: 1px solid var(--line);
   border-radius: 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; animation: rise .18s ease-out;
 }
 .modal.sm { width: min(440px, 100%); }
-.modal-h { display: flex; align-items: center; gap: 8px; padding: 12px 12px 0 18px; }
-.modal-b { padding: 10px 18px 18px; display: grid; gap: 16px; }
-.modal-f { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: var(--surface); flex-wrap: wrap; }
+.modal-h { display: flex; align-items: center; gap: 8px; padding: 12px 12px 0 18px; flex: none; }
+/* Прокручивается только середина (поля); шапка и кнопки внизу стоят на месте — «Записать» всегда на виду. */
+.modal-b { padding: 10px 18px 18px; display: grid; gap: 16px; align-content: start; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+.modal-f { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; flex: none; }
 .modal-f .sp { flex: 1; }
 @media (max-width: 640px) {
-  .overlay { align-items: flex-end; padding: 0; }
-  .modal { width: 100%; max-height: 92vh; border-radius: 18px 18px 0 0; animation: sheet .22s ease-out; }
+  /* Высота подложки = видимая область (её задаёт Modal через visualViewport, чтобы клавиатура не закрывала кнопку). */
+  .overlay { align-items: flex-end; padding: 0; inset: var(--vvt, 0px) 0 auto 0; height: var(--vvh, 100%); }
+  .modal { width: 100%; max-height: 94%; border-radius: 18px 18px 0 0; animation: sheet .22s ease-out; }
   .modal-f { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .modal-f .btn.primary { flex: 1 1 auto; min-height: 44px; }
   .modal::before { content: ''; display: block; width: 38px; height: 4px; border-radius: 2px; background: var(--line-strong); margin: 8px auto 0; flex: none; }
 }
 @keyframes fade { from { opacity: 0; } }
@@ -850,3 +853,8 @@ html.booting .route *, html.booting .login * { animation-play-state: paused !imp
 .today-top > :nth-child(2) { animation-delay: 80ms; }
 .tiles > * { animation: in-up var(--dur-3) var(--ease) backwards; }
 .tiles > :nth-child(2) { animation-delay: 50ms; } .tiles > :nth-child(3) { animation-delay: 100ms; }
+
+/* iPhone увеличивает страницу при фокусе на поле с текстом меньше 16px — окно «уезжает». Держим 16px на телефоне (в конце файла, чтобы перебить остальное). */
+@media (max-width: 640px) {
+  .input, .select, .textarea, .props .input, .props .select, .note-title, .md-editor, .search-box input { font-size: 16px; }
+}
