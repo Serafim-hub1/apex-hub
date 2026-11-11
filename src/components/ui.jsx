@@ -5,8 +5,8 @@ import { useStore } from '../lib/store';
 
 /* ── Защита от «белого экрана»: если страница упала, остальное приложение живо ── */
 export class ErrorBoundary extends Component {
-  state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
+  state = { failed: false, msg: '' };
+  static getDerivedStateFromError(e) { return { failed: true, msg: String(e?.stack || e?.message || e).split('\n').slice(0, 3).join(' ← ').slice(0, 300) }; }
   componentDidCatch(e) { console.error('Страница упала:', e); }
   render() {
     if (!this.state.failed) return this.props.children;
@@ -14,6 +14,7 @@ export class ErrorBoundary extends Component {
       <div className="page">
         <div className="banner warn" style={{ display: 'grid', gap: 10 }}>
           <span>Этот раздел не открылся из-за ошибки. Остальное приложение работает.</span>
+          <code style={{ fontSize: 12, opacity: 0.8, wordBreak: 'break-word', userSelect: 'text' }}>{this.state.msg}</code>
           <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn sm" onClick={() => this.setState({ failed: false })}>Попробовать ещё раз</button>
             <button className="btn sm ghost" onClick={() => window.location.reload()}>Перезагрузить</button>
