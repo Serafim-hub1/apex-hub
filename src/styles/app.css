@@ -345,14 +345,14 @@ table.db select.inline { border: 0; background: none; color: inherit; font-weigh
 
 /* ── модальные окна / нижние шторки ── */
 .overlay { position: fixed; inset: 0; z-index: 60; background: var(--overlay); display: flex; align-items: center; justify-content: center; padding: 20px; animation: fade .15s ease-out; overscroll-behavior: contain; touch-action: none; }
-.modal {
+.modal { min-width: 0; max-width: 100%;
   width: min(640px, 100%); max-height: min(88vh, 900px); overflow: hidden; background: var(--surface); border: 1px solid var(--line);
   border-radius: 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; animation: rise .18s ease-out;
 }
 .modal.sm { width: min(440px, 100%); }
 .modal-h { display: flex; align-items: center; gap: 8px; padding: 12px 12px 0 18px; flex: none; }
 /* Прокручивается только середина (поля); шапка и кнопки внизу стоят на месте — «Записать» всегда на виду. */
-.modal-b { padding: 10px 18px 18px; display: grid; gap: 16px; align-content: start; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+.modal-b { padding: 10px 18px 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; overflow-x: hidden; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
 .modal-f { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; flex: none; }
 .modal-f .sp { flex: 1; }
 @media (max-width: 640px) {
@@ -787,10 +787,10 @@ html.booting .route *, html.booting .login * { animation-play-state: paused !imp
 
 /* Смена раздела: старый экран растворяется в новом, меню и шапка остаются на месте */
 @supports (view-transition-name: none) {
-  .sidebar { view-transition-name: apex-side; }
-  .topbar { view-transition-name: apex-top; }
-  .tabbar { view-transition-name: apex-tabs; }
-  .fab { view-transition-name: apex-fab; }
+  html.vt .sidebar { view-transition-name: apex-side; }
+  html.vt .topbar { view-transition-name: apex-top; }
+  html.vt .tabbar { view-transition-name: apex-tabs; }
+  html.vt .fab { view-transition-name: apex-fab; }
   ::view-transition-old(apex-side), ::view-transition-old(apex-top), ::view-transition-old(apex-tabs), ::view-transition-old(apex-fab) { display: none; }
   ::view-transition-new(apex-side), ::view-transition-new(apex-top), ::view-transition-new(apex-tabs), ::view-transition-new(apex-fab) { animation: none; }
   ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.26s; animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1); }
@@ -860,3 +860,9 @@ html.booting .route *, html.booting .login * { animation-play-state: paused !imp
 @media (max-width: 640px) {
   .input, .select, .textarea, .props .input, .props .select, .note-title, .md-editor, .search-box input { font-size: 16px; }
 }
+
+/* Окно не должно «ездить» вбок: ничего внутри не шире экрана (поле даты на iPhone, длинные ФИО в списке игроков). */
+.picker-list { overflow-x: hidden; }
+.picker-item { min-width: 0; }
+.picker-item .pill { flex: none; max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal input[type='date'], .modal input[type='time'] { -webkit-appearance: none; appearance: none; display: block; min-width: 0; max-width: 100%; text-align: left; }
