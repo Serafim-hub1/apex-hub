@@ -53,7 +53,7 @@ export const EVENT_TYPES = [
   { key: 'other', label: 'Другое' },
 ];
 
-export const GROUPS = ['Junior', 'Взрослые', 'Лига u14', 'Лига u16'];
+export const GROUPS = ['Junior', 'Взрослые', 'Лига U15', 'Лига U17'];
 
 /** Варианты напоминаний (минуты до срока). Для задач без времени точка отсчёта — 9:00 дня срока. */
 export const REMINDERS = [

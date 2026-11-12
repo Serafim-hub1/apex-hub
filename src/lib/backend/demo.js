@@ -54,7 +54,7 @@ function seed() {
     const dow = day.getDay();
     const date = ymd(day);
     // Тренировки Junior и взрослых приходят из постоянного расписания (lib/schedule.js).
-    if (dow === 6 && i % 2 === 0) ev({ title: 'Игра лиги U15: APEX — Storm', type: 'game', group: 'Лига u14', date, start: '12:00', end: '13:30', location: 'Дворец спорта' });
+    if (dow === 6 && i % 2 === 0) ev({ title: 'Игра лиги U15: APEX — Storm', type: 'game', group: 'Лига U15', date, start: '12:00', end: '13:30', location: 'Дворец спорта' });
   }
   ev({ title: 'Созвон команды: итоги месяца', type: 'meeting', date: d(2), start: '21:00', end: '21:45', location: 'Telegram' });
   ev({ title: 'Дедлайн оплат за месяц', type: 'deadline', date: d(4), allDay: true, start: null, end: null, location: '' });
