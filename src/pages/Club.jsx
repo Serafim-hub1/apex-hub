@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Wallet, RefreshCw, Plus, ClipboardCheck, UserPlus, Search, CheckCheck, Phone, FileSpreadsheet, AlertTriangle, Send, Copy } from 'lucide-react';
 import { useStore } from '../lib/store';
@@ -6,6 +6,9 @@ import { clubCall, clubConfigured, readCache, reminderText, reminderMessage, pay
 import { Modal, ModalHead, Empty, TitleArea, Collapse, SkelRows, useToast } from '../components/ui';
 import { todayStr, fmt, humanDay } from '../lib/dates';
 import { CountUp } from '../components/motion';
+import { useClub, rub } from './club/shared';
+import League from './club/League';
+import Finance from './club/Finance';
 
 const STATUS_ORDER = { 'Не оплачен': 0, 'Оплачен': 2 };
 /** Группы списка абонементов. Важное открыто, остальное свёрнуто (выбор запоминается на устройстве).
@@ -19,8 +22,6 @@ const LEADS_CLOSED = ['Клиент', 'Отказ'];
 /** Старые ответы скрипта (и кэш) ещё могут прислать статус «Разовые». */
 const normPay = (p) => (p.status === 'Разовые' ? { ...p, status: 'Не оплачен' } : p);
 
-const rub = (n) => (n === null || n === undefined || n === '' ? '—' : `${Number(n).toLocaleString('ru-RU')} ₽`);
-
 /** Пилюля статуса оплаты: зелёная — абонемент, нейтральная — без абонемента, но платит за разовые, красная — ничего. */
 export function PayPill({ p }) {
   if (p.status === 'Оплачен') {
@@ -32,24 +33,12 @@ export function PayPill({ p }) {
   return <span className="pill bad"><span className="pdot" />{p.status || 'Не оплачен'}</span>;
 }
 
-function useClub(action, payload) {
-  const { getIdToken } = useStore();
-  const [data, setData] = useState(() => readCache(action)?.data || null);
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const key = JSON.stringify(payload || {});
-  const load = useCallback(async () => {
-    setBusy(true); setErr('');
-    try { setData(await clubCall(action, JSON.parse(key), getIdToken)); } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  }, [action, key, getIdToken]);
-  useEffect(() => { load(); }, [load]);
-  return { data, err, busy, reload: load, setData };
-}
-
 export default function Club() {
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') || 'payments';
   const setTab = (t) => setParams({ tab: t }, { replace: true });
+  const sub = ['league', 'finance'].includes(params.get('sub')) ? params.get('sub') : 'training';
+  const setSub = (s) => setParams(s === 'training' ? { tab: 'payments' } : { tab: 'payments', sub: s }, { replace: true });
 
   if (!clubConfigured()) {
     return (
@@ -70,7 +59,16 @@ export default function Club() {
           <button className={tab === 'leads' ? 'on' : ''} onClick={() => setTab('leads')}><UserPlus size={15} /> Заявки</button>
         </div>
       </div>
-      {tab === 'payments' && <Payments openAdd={params.get('add') === '1'} />}
+      {tab === 'payments' && (
+        <div className="seg" style={{ marginBottom: 14 }}>
+          <button className={sub === 'training' ? 'on' : ''} onClick={() => setSub('training')}>Тренировки</button>
+          <button className={sub === 'league' ? 'on' : ''} onClick={() => setSub('league')}>Лига</button>
+          <button className={sub === 'finance' ? 'on' : ''} onClick={() => setSub('finance')}>Финансы</button>
+        </div>
+      )}
+      {tab === 'payments' && sub === 'training' && <Payments openAdd={params.get('add') === '1'} />}
+      {tab === 'payments' && sub === 'league' && <League />}
+      {tab === 'payments' && sub === 'finance' && <Finance />}
       {tab === 'attendance' && <Attendance />}
       {tab === 'leads' && <Leads />}
     </div>
@@ -184,15 +182,6 @@ function Payments({ openAdd }) {
                 <div style={{ minWidth: 0 }}><div className="n">{r.fio}</div><div className="s">{r.date} · {r.method || '—'} · {r.abonement || '—'}{r.by ? ` · внёс ${r.by}` : ''}</div></div>
                 <div style={{ display: 'grid', justifyItems: 'end' }}><b className="num">{rub(r.amount)}</b><span className="s">{r.status}</span></div>
               </div>
-            ))}
-          </div>
-        </Collapse>
-        <Collapse id="pay-league" className="panel" title={<span className="h2">Долги по лиге</span>} count={s?.league?.length}>
-          <div className="panel-b">
-            {!s && sum.busy && <SkelRows n={2} pill dense />}
-            {s && (s.league || []).length === 0 && <Empty icon={CheckCheck}>Долгов нет.</Empty>}
-            {(s?.league || []).map((l, i) => (
-              <div key={i} className="alert-row"><span className="pill">{l.league}</span><span className="n">{l.fio}</span><b className="num" style={{ color: 'var(--danger)' }}>{rub(l.debt)}</b></div>
             ))}
           </div>
         </Collapse>

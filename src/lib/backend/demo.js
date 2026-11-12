@@ -41,9 +41,9 @@ function seed() {
       checklist: [{ id: 'c1', text: 'Школа № 121', done: true }, { id: 'c2', text: 'Ещё 4 школы', done: false }] }),
     t({ title: 'План тренировки: неделя 10 — заслоны', area: 'training', priority: 'high', assignees: [A], dueDate: d(-1), dueTime: '21:00' }),
     t({ title: 'Продлить аренду зала в Академии Спартак на январь', area: 'admin', priority: 'high', assignees: [S], dueDate: d(9) }),
-    t({ title: 'Заказать форму для лиги u14', area: 'league', priority: 'med', assignees: [S, K], dueDate: d(14), status: 'review' }),
+    t({ title: 'Заказать форму для лиги U15', area: 'league', priority: 'med', assignees: [S, K], dueDate: d(14), status: 'review' }),
     t({ title: 'Закрепить в чате правила оплаты', area: 'marketing', status: 'done', assignees: [K], dueDate: d(-3), doneAt: iso() }),
-    t({ title: 'Взнос за лигу u16 — сверить должников', area: 'league', status: 'done', assignees: [A], dueDate: d(-2), doneAt: iso() }),
+    t({ title: 'Взнос за лигу U17 — сверить должников', area: 'league', status: 'done', assignees: [A], dueDate: d(-2), doneAt: iso() }),
   ];
   tasks.forEach((x) => { x.remindAt = computeRemindAt(x.dueDate, x.dueTime, x.remind); });
 
@@ -54,7 +54,7 @@ function seed() {
     const dow = day.getDay();
     const date = ymd(day);
     // Тренировки Junior и взрослых приходят из постоянного расписания (lib/schedule.js).
-    if (dow === 6 && i % 2 === 0) ev({ title: 'Игра лиги u14: APEX — Storm', type: 'game', group: 'Лига u14', date, start: '12:00', end: '13:30', location: 'Дворец спорта' });
+    if (dow === 6 && i % 2 === 0) ev({ title: 'Игра лиги U15: APEX — Storm', type: 'game', group: 'Лига u14', date, start: '12:00', end: '13:30', location: 'Дворец спорта' });
   }
   ev({ title: 'Созвон команды: итоги месяца', type: 'meeting', date: d(2), start: '21:00', end: '21:45', location: 'Telegram' });
   ev({ title: 'Дедлайн оплат за месяц', type: 'deadline', date: d(4), allDay: true, start: null, end: null, location: '' });

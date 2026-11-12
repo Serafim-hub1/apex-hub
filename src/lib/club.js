@@ -15,6 +15,11 @@ export const DEFAULT_LISTS = {
 
 export const PRICES = { 'Разовая': 1600, '1 раз/нед.': 9000, '2 раза/нед.': 11500, '3 раза/нед.': 14500 };
 
+/** Лига U15/U17: типы оплат как в «Журнале оплат лиги» и цены по умолчанию (сумму можно поправить, 0 допустим). */
+export const LEAGUES = ['U15', 'U17'];
+export const LEAGUE_TYPES = ['Вступительный взнос', 'Полгода', 'Год', 'Матч'];
+export const LEAGUE_PRICES = { 'Вступительный взнос': 3000, 'Полгода': 20000, 'Год': 40000, 'Матч': 3000 };
+
 /** «⚠ Через 0 дн.» из таблицы → «Истекает сегодня». */
 export function reminderText(r) {
   const t = String(r || '').replace('⚠', '').trim();
@@ -100,7 +105,7 @@ export async function clubCall(action, payload = {}, getIdToken) {
   if (!json) throw new Error('Таблица ответила непонятно. Проверьте, что Apps Script опубликован как веб-приложение с доступом «Все».');
   if (!json.ok) throw new Error(json.error || 'Ошибка таблицы');
   if (!shapeOk(action, json.data)) throw new Error('Таблица прислала ответ в неожиданной форме. Нажмите «Повторить»; если не проходит — скрипт таблицы не обновился.');
-  if (['summary', 'players', 'leads', 'payRecent'].includes(action)) writeCache(action, json.data);
+  if (['summary', 'players', 'leads', 'payRecent', 'league', 'finance'].includes(action)) writeCache(action, json.data);
   return json.data;
 }
 
@@ -220,11 +225,95 @@ function demoSummary(db) {
       attJunior: 0.82, attAdults: 0.7,
     },
     payments,
-    league: [
-      { league: 'Лига u14', fio: 'Глеб Воронин', debt: 3000 },
-      { league: 'Лига u16', fio: 'Егор Журавлёв', debt: 6000 },
-    ],
   };
+}
+
+/* Демо лиги: выдуманные игроки и суммы, статусы считаются так же, как формулы таблицы (абонемент покрывает 7 / 15 матчей). */
+const DEMO_LEAGUE = {
+  U15: ['Артём Беляев', 'Глеб Воронов', 'Данил Крылов', 'Егор Фомин', 'Макар Ильин'],
+  U17: ['Никита Осипов', 'Руслан Тихонов', 'Савва Дроздов', 'Тимур Мартынов'],
+};
+const demoMatchDates = () => [-20, -5, 10].map((n) => ymd(addDays(new Date(), n)));
+function demoLeagueJournal(db) {
+  if (db.leagueJournal) return db.leagueJournal;
+  const d = (n) => ymd(addDays(new Date(), n));
+  const row = (league, fio, date, type, match, amount) => ({ league, fio, date, type, match, amount, comment: '' });
+  db.leagueJournal = [
+    row('U15', 'Артём Беляев', d(-30), 'Вступительный взнос', '', 3000),
+    row('U15', 'Глеб Воронов', d(-30), 'Вступительный взнос', '', 3000),
+    row('U15', 'Данил Крылов', d(-30), 'Вступительный взнос', '', 3000),
+    row('U15', 'Данил Крылов', d(-30), 'Полгода', '', 20000),
+    row('U15', 'Артём Беляев', d(-20), 'Матч', 'Матч 1', 3000),
+    row('U15', 'Глеб Воронов', d(-5), 'Матч', 'Матч 2', 2000),
+    row('U17', 'Никита Осипов', d(-30), 'Вступительный взнос', '', 3000),
+    row('U17', 'Руслан Тихонов', d(-30), 'Вступительный взнос', '', 0),
+    row('U17', 'Никита Осипов', d(-20), 'Матч', 'Матч 1', 3000),
+    row('U17', 'Руслан Тихонов', d(-5), 'Матч', 'Матч 2', 3000),
+  ].map((j, i) => ({ ...j, id: 'LP-' + String(i + 1).padStart(4, '0') }));
+  return db.leagueJournal;
+}
+const demoRowMonth = (j) => (j.type === 'Матч' ? demoMatchDates()[Number(String(j.match).split(' ')[1]) - 1] || '' : j.date).slice(0, 7);
+
+function demoLeague(db) {
+  const jr = demoLeagueJournal(db);
+  const month = ymd(new Date()).slice(0, 7);
+  const dates = demoMatchDates();
+  const matches = Array.from({ length: 15 }, (_, i) => ({ name: 'Матч ' + (i + 1), date: dates[i] ? fmt(dates[i], 'dd.MM.yyyy') : '' }));
+  const sum = (arr) => arr.reduce((s, j) => s + j.amount, 0);
+  const out = {};
+  Object.keys(DEMO_LEAGUE).forEach((code) => {
+    const mine = jr.filter((j) => j.league === code);
+    const grid = DEMO_LEAGUE[code].map((fio) => {
+      const my = mine.filter((j) => j.fio === fio);
+      const has = (t) => my.some((j) => j.type === t);
+      const plan = has('Год') ? 'Год' : has('Полгода') ? 'Полгода' : has('Матч') ? 'Разовая' : '';
+      const cells = matches.map((m, i) => {
+        if (!m.date) return '';
+        if ((has('Год') && i < 15) || (has('Полгода') && i < 7)) return 'Абонемент';
+        return my.some((j) => j.type === 'Матч' && j.match === m.name) ? 'Оплачен' : 'Не оплачен';
+      });
+      return {
+        fio, entry: has('Вступительный взнос') ? 'Оплачен' : 'Не оплачен', plan, planStatus: plan === 'Разовая' ? 'По матчам' : plan ? 'Оплачен' : '',
+        covered: cells.filter((c) => c === 'Оплачен' || c === 'Абонемент').length, total: sum(my), cells,
+      };
+    });
+    const inMonth = mine.filter((j) => demoRowMonth(j) === month);
+    const income = sum(inMonth);
+    const expense = dates.filter((x) => x.startsWith(month)).length * 10000;
+    out[code] = {
+      players: DEMO_LEAGUE[code], matches, grid,
+      month: {
+        label: fmt(month + '-01', 'LLLL'), players: grid.length, income, expense, net: income - expense,
+        incomeBy: { entry: sum(inMonth.filter((j) => j.type === 'Вступительный взнос')), plans: sum(inMonth.filter((j) => j.type === 'Полгода' || j.type === 'Год')), matches: sum(inMonth.filter((j) => j.type === 'Матч')) },
+        expenseBy: { matches: expense, entry: 0 }, matchPrice: 10000, entryFee: 17000,
+      },
+      monthly: [{ label: fmt(month + '-01', 'LLL yyyy'), ym: month, income, expense, net: income - expense }],
+      byMatch: matches.map((m, i) => ({ m, i })).filter((x) => x.m.date).map(({ m, i }) => ({
+        name: m.name, date: m.date, covered: grid.filter((g) => g.cells[i] !== 'Не оплачен').length,
+        income: sum(mine.filter((j) => j.match === m.name)), expense: 10000, net: sum(mine.filter((j) => j.match === m.name)) - 10000,
+      })),
+    };
+  });
+  out.recent = [...jr].reverse().slice(0, 20).map((j) => {
+    const i = Number(String(j.match).split(' ')[1]) - 1;
+    return { id: j.id, league: j.league, fio: j.fio, date: fmt(j.date, 'dd.MM.yyyy'), month: demoRowMonth(j), type: j.type, match: j.match,
+      matchDate: j.match && dates[i] ? fmt(dates[i], 'dd.MM.yyyy') : '', amount: j.amount, comment: j.comment };
+  });
+  return out;
+}
+
+function demoFinance(db) {
+  const lg = demoLeague(db);
+  const month = ymd(new Date()).slice(0, 7);
+  const training = demoSummary(db).kpi.revenue;
+  const league = lg.U15.month.net + lg.U17.month.net;
+  const past = [[190000, 0], [220000, 60000], [205000, 34000]]; // выдуманные прошлые месяцы
+  const monthly = past.map(([t, l], i) => {
+    const ym = ymd(addDays(new Date(month + '-15'), -30 * (past.length - i))).slice(0, 7);
+    return { label: fmt(ym + '-01', 'LLL yyyy'), ym, training: t, league: l, total: t + l };
+  });
+  monthly.push({ label: fmt(month + '-01', 'LLL yyyy'), ym: month, training, league, total: training + league });
+  return { monthLabel: fmt(month + '-01', 'LLLL yyyy'), training, league, total: training + league, monthly };
 }
 
 function demoClub(action, p) {
@@ -240,6 +329,19 @@ function demoClub(action, p) {
         date: p.date, amount: Number(p.amount), status: p.status, method: p.method, abonement: p.abonement, comment: p.comment || '', by: 'Демо' });
       saveDemo(db);
       return { row: db.journal.length + 1 };
+    }
+    case 'league': return demoLeague(db);
+    case 'finance': return demoFinance(db);
+    case 'leagueAdd': {
+      p = p.pay;
+      const jr = demoLeagueJournal(db);
+      const match = p.type === 'Матч' ? p.match : '';
+      const dup = !p.force && jr.find((j) => j.league === p.league && j.fio === p.fio && j.type === p.type && j.match === match);
+      if (dup) return { duplicate: { id: dup.id, date: fmt(dup.date, 'dd.MM.yyyy'), amount: dup.amount, type: dup.type, match: dup.match } };
+      const id = 'LP-' + String(jr.length + 1).padStart(4, '0');
+      jr.push({ id, league: p.league, fio: p.fio, date: p.date, type: p.type, match, amount: Number(p.amount) || 0, comment: p.comment || '' });
+      saveDemo(db);
+      return { row: jr.length + 1, id, warnings: [] };
     }
     case 'attGet': {
       const key = p.group + '|' + p.date;

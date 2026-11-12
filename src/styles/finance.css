@@ -1,0 +1,37 @@
+/* Экран «Финансы». Только токены цветов из app.css. */
+.fin { display: grid; gap: 16px; min-width: 0; }
+.fin-h { margin: 0; font-size: 15px; font-weight: 700; }
+.fin-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--panel-shadow); }
+.fin-tile { padding: 14px 16px 13px; border-left: 1px solid var(--line); min-width: 0; }
+.fin-tile:first-child { border-left: 0; }
+.fin-tile b { font-size: 26px; white-space: nowrap; }
+.fin-tile.neg b { color: var(--danger); }
+@media (max-width: 560px) {
+  .fin-tiles { grid-template-columns: minmax(0, 1fr); }
+  .fin-tile { border-left: 0; border-top: 1px solid var(--line); }
+  .fin-tile:first-child { border-top: 0; }
+}
+
+.fin-panel .panel-b { display: grid; gap: 12px; min-width: 0; }
+.fin-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--fg-2); font-weight: 600; }
+.fin-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.fin-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+.fin-scroll { overflow-x: auto; max-width: 100%; }
+.fin-svg { display: block; width: 100%; height: auto; }
+.fin-bar.tr, .fin-dot.tr { fill: var(--accent-text); background: var(--accent-text); }
+.fin-bar.lg, .fin-dot.lg { fill: var(--warn); background: var(--warn); }
+.fin-bar.tt, .fin-dot.tt { fill: var(--fg-2); background: var(--fg-2); }
+.fin-cur { fill: var(--accent-soft); }
+.fin-zero { stroke: var(--line-strong); stroke-width: 1; }
+.fin-x { font-size: 10px; fill: var(--muted); font-family: var(--f-body); font-weight: 600; }
+.fin-x.cur { fill: var(--fg); }
+.fin-none { color: var(--muted); font-size: 13px; }
+
+.fin-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; min-width: 400px; }
+.fin-table th, .fin-table td { padding: 7px 8px; text-align: right; border-top: 1px solid var(--line); white-space: nowrap; }
+.fin-table th:first-child, .fin-table td:first-child { text-align: left; }
+.fin-table th { color: var(--muted); font-size: 12px; font-weight: 600; border-top: 0; }
+.fin-table tr.zero td { color: var(--muted); }
+.fin-table tr.cur td { background: var(--accent-soft); }
+.fin-table td.neg, .fin-table td.neg b { color: var(--danger); }

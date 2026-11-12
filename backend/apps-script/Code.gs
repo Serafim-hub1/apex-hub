@@ -33,7 +33,8 @@ var APEX_HUB = (function () {
 const TZ = 'Europe/Moscow';
 const SHEETS = {
   players: 'Игроки', payments: 'Оплаты', journal: 'Журнал оплат', leads: 'Заявки', lists: 'Справочники',
-  leagues: ['Лига u14', 'Лига u16'], attendance: (g) => 'Посещаемость — ' + g,
+  leagueJournal: 'Журнал оплат лиги', league: { U15: 'Лига U15', U17: 'Лига U17' }, dashboard: 'Dashboard',
+  attendance: (g) => 'Посещаемость — ' + g,
 };
 
 /* ───────────────────────── входные точки ───────────────────────── */
@@ -71,6 +72,9 @@ const ACTIONS = {
   leads: () => leads_(),
   leadAdd: (b) => withLock_(() => leadAdd_(b.lead)),
   leadUpdate: (b) => withLock_(() => leadUpdate_(b.row, b.patch)),
+  league: () => league_(),
+  leagueAdd: (b) => withLock_(() => leagueAdd_(b.pay)),
+  finance: () => finance_(),
 };
 
 /** Однократная настройка: разрешения + триггер каждые 5 минут. */
@@ -195,15 +199,6 @@ function summary_() {
   });
   payments.forEach((p) => { p.oneOff = oneOff[p.id] || null; p.paidMonth = paidMonth[p.id] || 0; });
   const leadStatuses = column_(sheet_(SHEETS.leads), 7);
-  const league = [];
-  SHEETS.leagues.forEach((name) => {
-    const sh2 = ss_().getSheetByName(name);
-    if (!sh2) return;
-    sh2.getDataRange().getValues().slice(1).forEach((r) => {
-      const debt = num_(r[22]);
-      if (r[0] && debt > 0) league.push({ league: name, fio: String(r[0]), debt: debt });
-    });
-  });
   return {
     month: month,
     kpi: {
@@ -220,7 +215,6 @@ function summary_() {
       trials: leadStatuses.filter((s) => s === 'Пробная назначена').length,
     },
     payments: payments,
-    league: league,
   };
 }
 
@@ -316,6 +310,150 @@ function payAdd_(pay, email) {
   sh.getRange(row, 12).setValue(ownerName_(email));
   SpreadsheetApp.flush();
   return { row: row };
+}
+
+/* ───────────────────────── Лига U15 / U17 ───────────────────────── */
+// Все расчёты (статусы матчей, доходы, расходы, итоги) делает таблица; здесь только чтение готовых значений и запись строки в журнал.
+// Подписи блоков ищем по тексту, а не по номеру строки: перестановка строк в таблице ничего не ломает.
+
+const LEAGUE_TYPES_ = ['Вступительный взнос', 'Полгода', 'Год', 'Матч'];
+const MONTHS_RU_ = { 'янв.': 1, 'февр.': 2, 'мар.': 3, 'апр.': 4, 'мая': 5, 'июн.': 6, 'июл.': 7, 'авг.': 8, 'сент.': 9, 'окт.': 10, 'нояб.': 11, 'дек.': 12 };
+const money_ = (v) => num_(String(v === undefined || v === null ? 0 : v).replace(/−/g, '-'));
+/** «нояб. 2026» → «2026-11» (пусто, если не разобрали). */
+function monthYm_(label) {
+  const m = String(label).trim().split(/\s+/);
+  const n = MONTHS_RU_[m[0]];
+  return n && /^\d{4}$/.test(m[1] || '') ? m[1] + '-' + (n < 10 ? '0' : '') + n : '';
+}
+
+/** Один лист лиги: игроки со статусами матчей, финансы месяца, помесячная динамика, итоги по матчам. */
+function leagueSheet_(code) {
+  const v = sheet_(SHEETS.league[code]).getDataRange().getDisplayValues();
+  const head = (v[0] || []).map((h) => String(h).trim());
+  const dates = v[1] || [];
+  const ix = (name, fb) => { const i = head.indexOf(name); return i >= 0 ? i : fb; };
+  const matches = [];
+  head.forEach((h, c) => { if (/^Матч \d+$/.test(h)) matches.push({ col: c, name: h, date: String(dates[c] || '').trim() }); });
+  const cEntry = ix('Вступительный взнос', 1), cPlan = ix('Тариф (из журнала)', 2), cPlanSt = ix('Статус тарифа', 3);
+  const cCov = ix('Покрыто матчей', 19), cTotal = ix('Получено всего, ₽', 20);
+  const grid = v.slice(2).filter((r) => String(r[0]).trim() !== '').map((r) => ({
+    fio: String(r[0]), entry: String(r[cEntry]).trim(), plan: String(r[cPlan]).trim(), planStatus: String(r[cPlanSt]).trim(),
+    covered: num_(r[cCov]), total: money_(r[cTotal]), cells: matches.map((m) => String(r[m.col] || '').trim()),
+  }));
+  // Блок «Финансы лиги»: пары «название → значение» справа от матрицы
+  const lc = head.indexOf('Финансы лиги');
+  const kv = {};
+  if (lc >= 0) for (let i = 1; i < Math.min(v.length, 40); i++) { const k = String(v[i][lc] || '').trim(); if (k) kv[k] = v[i][lc + 1]; }
+  const k = (name) => money_(kv[name]);
+  const month = {
+    label: lc >= 0 ? String(head[lc + 1] || '').replace(/^Текущий месяц:\s*/, '') : '',
+    players: k('Игроков'), income: k('Доход за месяц, ₽'), expense: k('Расходы за месяц, ₽'), net: k('Чистый результат за месяц, ₽'),
+    incomeBy: { entry: k('Вступительные от игроков, ₽'), plans: k('Абонементы, ₽'), matches: k('Оплаты за матчи, ₽') },
+    expenseBy: { matches: k('Расходы на матчи, ₽'), entry: k('Вступление в лигу, ₽') },
+    matchPrice: k('Стоимость матча, ₽'), entryFee: k('Вступительный взнос лиги, ₽'),
+  };
+  // Динамика по месяцам и итоги по матчам — таблицы под заголовком «Месяц» / «Матч»
+  const mc = head.indexOf('Месяц');
+  const monthly = [], byMatch = [];
+  if (mc >= 0) {
+    for (let i = 1; i < v.length && String(v[i][mc]).trim() !== '' && String(v[i][mc]).trim() !== 'Матч'; i++) {
+      monthly.push({ label: String(v[i][mc]).trim(), ym: monthYm_(v[i][mc]), income: money_(v[i][mc + 1]), expense: money_(v[i][mc + 2]), net: money_(v[i][mc + 3]) });
+    }
+    for (let i = 1; i < v.length; i++) {
+      if (String(v[i][mc]).trim() !== 'Матч') continue;
+      for (let j = i + 1; j < v.length && String(v[j][mc]).trim() !== ''; j++) {
+        const date = String(v[j][mc + 1] || '').trim();
+        if (date) byMatch.push({ name: String(v[j][mc]).trim(), date: date, covered: num_(v[j][mc + 2]), income: money_(v[j][mc + 3]), expense: money_(v[j][mc + 4]), net: money_(v[j][mc + 5]) });
+      }
+      break;
+    }
+  }
+  return {
+    players: grid.map((g) => g.fio), matches: matches.map((m) => ({ name: m.name, date: m.date })),
+    grid: grid, month: month, monthly: monthly, byMatch: byMatch,
+  };
+}
+
+/** Строки «Журнала оплат лиги» (значения как в таблице), где заполнено ФИО (колонка C): A–E, H — формулы на весь лист. */
+function leagueJournalRows_() {
+  return sheet_(SHEETS.leagueJournal).getDataRange().getDisplayValues().slice(1).filter((r) => String(r[2]).trim() !== '');
+}
+
+function league_() {
+  const out = { U15: leagueSheet_('U15'), U17: leagueSheet_('U17') };
+  out.recent = leagueJournalRows_().reverse().slice(0, 20).map((r) => ({
+    id: String(r[0]), league: String(r[1]), fio: String(r[2]).trim(), date: String(r[3]), month: String(r[4]),
+    type: String(r[5]), match: String(r[6]), matchDate: String(r[7]), amount: money_(r[8]), comment: String(r[9] || ''),
+  }));
+  return out;
+}
+
+/** Запись оплаты лиги. Пишем только B, C, D, F, G, I, J; A (ID), E и H считают формулы / скрипт таблицы.
+ *  Если такая оплата уже есть, возвращаем { duplicate } и ничего не пишем — приложение спросит и повторит с force. */
+function leagueAdd_(pay) {
+  pay = pay || {};
+  const code = String(pay.league || '').trim();
+  if (!SHEETS.league[code]) throw new Error('Не указана лига (U15 или U17)');
+  const type = String(pay.type || '').trim();
+  if (LEAGUE_TYPES_.indexOf(type) < 0) throw new Error('Неизвестный тип оплаты: ' + type);
+  const match = type === 'Матч' ? String(pay.match || '').trim() : '';
+  if (type === 'Матч' && !match) throw new Error('Для оплаты за матч выберите матч');
+  const amount = Number(pay.amount);
+  if (pay.amount === '' || pay.amount === null || pay.amount === undefined || isNaN(amount) || amount < 0) throw new Error('Укажите сумму (0 допустим)');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(pay.date || ''))) throw new Error('Укажите дату оплаты');
+  const lg = leagueSheet_(code);
+  const want = String(pay.fio || '');
+  const player = lg.grid.filter((g) => g.fio === want)[0] || lg.grid.filter((g) => g.fio.trim() === want.trim())[0];
+  if (!player) throw new Error('Игрока «' + want.trim() + '» нет в списке лиги ' + code);
+  if (match && !lg.matches.some((m) => m.name === match && m.date)) throw new Error('У «' + match + '» нет даты в листе «' + SHEETS.league[code] + '»');
+
+  const jsh = sheet_(SHEETS.leagueJournal);
+  if (!pay.force) {
+    const dup = leagueJournalRows_().filter((r) => String(r[1]).trim() === code && String(r[2]).trim() === player.fio.trim()
+      && String(r[5]).trim() === type && (type !== 'Матч' || String(r[6]).trim() === match))[0];
+    if (dup) return { duplicate: { id: String(dup[0]), date: String(dup[3]), amount: money_(dup[8]), type: type, match: match } };
+  }
+  const row = firstEmptyRow_(jsh, 3); // колонка C — ФИО
+  if (row > jsh.getMaxRows()) throw new Error('«' + SHEETS.leagueJournal + '» заполнен до конца: добавьте строки с формулами.');
+  // ФИО — ровно как в листе лиги (с пробелом на конце, если он там есть): по нему считают формулы и список проверки
+  jsh.getRange(row, 2, 1, 3).setValues([[code, player.fio, parseYmd_(pay.date)]]);
+  jsh.getRange(row, 6, 1, 2).setValues([[type, match]]);
+  jsh.getRange(row, 9, 1, 2).setValues([[amount, String(pay.comment || '')]]);
+  SpreadsheetApp.flush();
+  // onEdit при записи из скрипта не срабатывает, поэтому ID и проверку вызываем явно (функции лежат в «Код.gs» таблицы)
+  const warnings = [];
+  try {
+    if (typeof apexEnsureJournalRowId === 'function') apexEnsureJournalRowId(SHEETS.leagueJournal, row);
+    else warnings.push('В проекте нет apexEnsureJournalRowId: ID оплаты временный.');
+  } catch (err) { warnings.push('ID оплаты: ' + String(err.message || err)); }
+  try {
+    if (typeof validateLeaguePaymentRow_ === 'function') validateLeaguePaymentRow_(jsh, row);
+  } catch (err) { warnings.push('Проверка строки: ' + String(err.message || err)); }
+  SpreadsheetApp.flush();
+  return { row: row, id: String(jsh.getRange(row, 1).getDisplayValue()).trim(), warnings: warnings };
+}
+
+/** Сводка из «Dashboard»: тренировки, лига, общий результат за месяц и динамика по месяцам. */
+function finance_() {
+  const v = sheet_(SHEETS.dashboard).getDataRange().getDisplayValues();
+  const after = (label) => {
+    for (let i = 0; i < Math.min(v.length, 7); i++) for (let c = 0; c < v[i].length - 1; c++) if (String(v[i][c]).trim() === label) return v[i][c + 1];
+    return '';
+  };
+  const monthly = [];
+  for (let i = 0; i < v.length && !monthly.length; i++) {
+    for (let c = 0; c < v[i].length - 3; c++) {
+      if (String(v[i][c]).trim() !== 'Месяц' || String(v[i][c + 1]).indexOf('Тренировки') !== 0) continue;
+      for (let j = i + 1; j < v.length && String(v[j][c]).trim() !== ''; j++) {
+        monthly.push({ label: String(v[j][c]).trim(), ym: monthYm_(v[j][c]), training: money_(v[j][c + 1]), league: money_(v[j][c + 2]), total: money_(v[j][c + 3]) });
+      }
+      break;
+    }
+  }
+  return {
+    monthLabel: String(after('Текущий месяц:')).trim(), training: money_(after('Тренировки — доход')),
+    league: money_(after('Лига — результат')), total: money_(after('Общий результат')), monthly: monthly,
+  };
 }
 
 /* ───────────────────────── Посещаемость ───────────────────────── */
