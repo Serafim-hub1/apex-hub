@@ -15,7 +15,7 @@ import './styles/app.css';
 import App from './App';
 import { EMBED } from './config';
 import { reloadOnce } from './lib/reload';
-import { applyTheme, getTheme } from './pages/Settings';
+import { applyTheme, getTheme } from './lib/theme';
 
 applyTheme(getTheme());
 

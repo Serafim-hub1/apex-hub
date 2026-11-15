@@ -27,7 +27,7 @@ export default function Tasks() {
   const { tasks, users, me, updateTask, loaded } = useStore();
   const { openTask } = useEditors();
   const [params, setParams] = useSearchParams();
-  const prefs = loadPrefs();
+  const [prefs] = useState(() => loadPrefs());
   const [view, setView] = useState(prefs.view || 'list');
   const [who, setWho] = useState(prefs.who || 'me');
   const [area, setArea] = useState('');
@@ -54,7 +54,7 @@ export default function Tasks() {
       if (area && t.area !== area) return false;
       if (s && !(t.title || '').toLowerCase().includes(s) && !(t.notes || '').toLowerCase().includes(s)) return false;
       return true;
-    }).sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999') || (a.dueTime || '99').localeCompare(b.dueTime || '99') || PR[a.priority] - PR[b.priority]);
+    }).sort((a, b) => (a.dueDate || '9999').localeCompare(b.dueDate || '9999') || (a.dueTime || '99').localeCompare(b.dueTime || '99') || (PR[a.priority] ?? 1) - (PR[b.priority] ?? 1));
   }, [tasks, who, me, area, q]);
 
   const active = filtered.filter((t) => t.status !== 'done');

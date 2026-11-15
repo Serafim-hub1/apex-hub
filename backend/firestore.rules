@@ -8,16 +8,26 @@ service cloud.firestore {
     }
     match /users/{uid} {
       allow read: if isTeam();
-      allow write: if isTeam();
+      allow write: if isTeam() && request.auth.uid == uid;
     }
     match /tasks/{id}  { allow read, write: if isTeam(); }
     match /events/{id} { allow read, write: if isTeam(); }
     match /notes/{id}  { allow read, write: if isTeam(); }
-    match /outbox/{id} { allow create: if isTeam(); }
-    // Токен устройства может записать только его владелец.
+    match /outbox/{id} {
+      allow create: if isTeam()
+        && request.resource.data.keys().hasOnly(['to', 'title', 'body', 'url', 'from', 'createdAt', 'sent'])
+        && request.resource.data.to is list && request.resource.data.to.size() <= 10
+        && request.resource.data.title is string && request.resource.data.title.size() <= 500
+        && request.resource.data.body is string && request.resource.data.body.size() <= 500
+        && (!('url' in request.resource.data) || (request.resource.data.url is string && request.resource.data.url.size() <= 500))
+        && request.resource.data.from == request.auth.uid;
+    }
+    // Токен устройства может записать, изменить и удалить только его владелец.
     match /devices/{id} {
-      allow read, delete: if isTeam();
-      allow create, update: if isTeam() && request.resource.data.uid == request.auth.uid;
+      allow read: if isTeam();
+      allow create: if isTeam() && request.resource.data.uid == request.auth.uid;
+      allow update: if isTeam() && resource.data.uid == request.auth.uid && request.resource.data.uid == request.auth.uid;
+      allow delete: if isTeam() && resource.data.uid == request.auth.uid;
     }
   }
 }

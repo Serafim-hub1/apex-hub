@@ -111,7 +111,7 @@ function json_(o) {
 }
 function withLock_(fn) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
+  try { lock.waitLock(20000); } catch (e) { throw new Error('Таблица занята другим действием — повторите через несколько секунд'); }
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
@@ -294,15 +294,31 @@ function ownerName_(email) {
 }
 
 function payAdd_(pay, email) {
-  if (!pay || !pay.fio) throw new Error('Не указан игрок');
-  const player = activePlayers_().filter((p) => p.fio === String(pay.fio).trim())[0];
-  if (!player) throw new Error('Игрока «' + pay.fio + '» нет на листе «Игроки»');
+  if (!pay || (!pay.fio && !pay.playerId)) throw new Error('Не указан игрок');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(pay.date || '')) || isNaN(parseYmd_(pay.date).getTime())) throw new Error('Укажите дату оплаты');
+  const amount = Number(pay.amount);
+  if (pay.amount === '' || pay.amount === null || pay.amount === undefined || isNaN(amount) || amount < 0) throw new Error('Укажите сумму оплаты (число не меньше 0)');
+  const status = String(pay.status || '').trim();
+  const abonement = String(pay.abonement || '').trim();
+  if (!status) throw new Error('Укажите статус оплаты');
+  if (!abonement) throw new Error('Укажите тип оплаты');
+  const players = activePlayers_();
+  const player = pay.playerId
+    ? players.filter((p) => p.id === String(pay.playerId).trim())[0]
+    : players.filter((p) => p.fio === String(pay.fio).trim())[0];
+  if (!player) throw new Error(pay.playerId ? 'Игрока с ID «' + pay.playerId + '» нет на листе «Игроки»' : 'Игрока «' + pay.fio + '» нет на листе «Игроки»');
   const sh = sheet_(SHEETS.journal);
+  if (pay.force !== true) {
+    const want = ymd_(parseYmd_(pay.date));
+    const dup = journalRows_().filter((r) => String(r[3]) === player.raw && isDate_(r[5]) && ymd_(r[5]) === want
+      && num_(r[6]) === amount && String(r[9]).trim() === abonement)[0];
+    if (dup) return { duplicate: { date: Utilities.formatDate(parseYmd_(pay.date), TZ, 'dd.MM.yyyy'), amount: amount, type: abonement } };
+  }
   const row = firstEmptyRow_(sh, 4); // колонка D — ФИО; A, B, C, E заполняют формулы
   // Пишем имя ровно как на листе «Игроки» (с пробелами, если они там есть), иначе формулы не найдут ID.
   sh.getRange(row, 4).setValue(player.raw);
   sh.getRange(row, 6, 1, 6).setValues([[
-    parseYmd_(pay.date), Number(pay.amount) || 0, pay.status || 'Оплачен', pay.method || 'Перевод', pay.abonement || '', pay.comment || '',
+    parseYmd_(pay.date), amount, status, pay.method || 'Перевод', abonement, pay.comment || '',
   ]]);
   // Колонка L «Внёс» — кто из команды записал оплату. Создаём её, если листа не хватает.
   if (sh.getMaxColumns() < 12) sh.insertColumnsAfter(sh.getMaxColumns(), 12 - sh.getMaxColumns());
@@ -381,7 +397,13 @@ function leagueJournalRows_() {
 
 function league_() {
   const out = { U15: leagueSheet_('U15'), U17: leagueSheet_('U17') };
-  out.recent = leagueJournalRows_().reverse().slice(0, 20).map((r) => ({
+  const all = leagueJournalRows_().reverse(); // новые сверху; по 20 последних на каждую лигу
+  const per = {};
+  out.recent = all.filter((r) => {
+    const code = String(r[1]).trim();
+    per[code] = (per[code] || 0) + 1;
+    return per[code] <= 20;
+  }).map((r) => ({
     id: String(r[0]), league: String(r[1]), fio: String(r[2]).trim(), date: String(r[3]), month: String(r[4]),
     type: String(r[5]), match: String(r[6]), matchDate: String(r[7]), amount: money_(r[8]), comment: String(r[9] || ''),
   }));
@@ -503,10 +525,19 @@ function attSet_(group, date, marks) {
     const rule = sh.getRange(2, 4, rows, 1).getDataValidations();
     sh.getRange(2, c + 1, rows, 1).setDataValidations(rule);
   }
-  const ids = v.slice(1).map((r) => String(r[0]));
-  const out = ids.map((id, i) => [Object.prototype.hasOwnProperty.call(marks, id) ? marks[id] : (v[i + 1][c] || '')]);
-  if (out.length) sh.getRange(2, c + 1, out.length, 1).setValues(out);
-  return { saved: Object.keys(marks).length, column: c + 1 };
+  // Перечитываем ID свежими (лист мог поменяться с момента чтения) и пишем только изменённые ячейки
+  const fresh = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, c + 1).getValues() : [];
+  const idRow = {};
+  fresh.forEach((r, i) => { const id = String(r[0]); if (id) idRow[id] = i; });
+  let saved = 0;
+  Object.keys(marks || {}).forEach((id) => {
+    const i = idRow[id];
+    if (i === undefined) return;
+    if (String(fresh[i][c] || '') === String(marks[id])) return;
+    sh.getRange(i + 2, c + 1).setValue(marks[id]);
+    saved++;
+  });
+  return { saved: saved, column: c + 1 };
 }
 
 /* ───────────────────────── Заявки ───────────────────────── */
@@ -538,6 +569,11 @@ function leadAdd_(lead) {
 function leadUpdate_(row, patch) {
   const sh = sheet_(SHEETS.leads);
   if (!row || row < 2) throw new Error('Неверная строка');
+  patch = patch || {};
+  const expected = String(patch.prevFio || patch.fio || '').trim();
+  if (row > sh.getLastRow() || String(sh.getRange(row, 2).getValue()).trim() !== expected) {
+    throw new Error('Заявка сдвинулась в таблице — обновите список и повторите');
+  }
   sh.getRange(row, 1, 1, 10).setValues([leadRow_(patch)]);
   return { row: row };
 }
@@ -561,9 +597,13 @@ function gToken_() {
   });
   const sig = Utilities.base64EncodeWebSafe(Utilities.computeRsaSha256Signature(unsigned, sa.private_key)).replace(/=+$/, '');
   const res = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
-    method: 'post', payload: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: unsigned + '.' + sig },
+    method: 'post', payload: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: unsigned + '.' + sig }, muteHttpExceptions: true,
   });
-  const token = JSON.parse(res.getContentText()).access_token;
+  let token = '';
+  try { token = JSON.parse(res.getContentText()).access_token; } catch (e) { /* не JSON */ }
+  if (res.getResponseCode() !== 200 || !token) {
+    throw new Error('Не удалось получить токен Google (код ' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 200));
+  }
   cache.put('g_token', token, 3300);
   return token;
 }
@@ -653,6 +693,13 @@ const esc_ = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').repla
 /* ───────────────────────── планировщик (каждые 5 минут) ───────────────────────── */
 
 function tick_() {
+  // Отдельная блокировка (документа), чтобы рассылка не задерживала запись оплат (у неё блокировка скрипта)
+  const lock = LockService.getDocumentLock() || LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return; // предыдущий запуск ещё идёт
+  try { tickRun_(); } finally { lock.releaseLock(); }
+}
+function tickRun_() {
+  const safe = (label, fn) => { try { fn(); } catch (err) { console.error(label + ': ' + (err && err.stack ? err.stack : err)); } };
   const nowIso = new Date().toISOString();
   const users = fsList_('users');
   const byId = {};
@@ -660,38 +707,39 @@ function tick_() {
   const everyone = users.map((u) => u.id);
 
   // 1. Напоминания о задачах
-  fsQuery_('tasks', 'remindAt', 'LESS_THAN_OR_EQUAL', nowIso).forEach((t) => {
+  // remindAt обнуляем ДО отправки: лучше потерять одно напоминание, чем слать его каждые 5 минут
+  safe('tasks', () => fsQuery_('tasks', 'remindAt', 'LESS_THAN_OR_EQUAL', nowIso).forEach((t) => safe('task ' + t.id, () => {
+    fsSet_('tasks', t.id, { remindAt: null });
     if (t.status !== 'done') {
       const to = (t.assignees && t.assignees.length) ? t.assignees : [t.createdBy];
       const when = t.dueTime ? 'Срок: ' + humanDate_(t.dueDate) + ', ' + t.dueTime : 'Срок: ' + humanDate_(t.dueDate);
-      to.forEach((uid) => byId[uid] && notifyUser_(byId[uid], '⏰ ' + t.title, when, '/tasks?open=' + t.id, 'task-' + t.id));
+      to.forEach((uid) => byId[uid] && safe('notify ' + uid, () => notifyUser_(byId[uid], '⏰ ' + t.title, when, '/tasks?open=' + t.id, 'task-' + t.id)));
     }
-    fsSet_('tasks', t.id, { remindAt: null });
-  });
+  })));
 
   // 2. Напоминания о событиях
-  fsQuery_('events', 'remindAt', 'LESS_THAN_OR_EQUAL', nowIso).forEach((e) => {
-    const body = (e.allDay ? 'Весь день' : e.start + (e.end ? '–' + e.end : '')) + (e.location ? ' · ' + e.location : '');
-    everyone.forEach((uid) => notifyUser_(byId[uid], '🏀 ' + e.title, humanDate_(e.date) + ', ' + body, '/calendar', 'event-' + e.id));
+  safe('events', () => fsQuery_('events', 'remindAt', 'LESS_THAN_OR_EQUAL', nowIso).forEach((e) => safe('event ' + e.id, () => {
     fsSet_('events', e.id, { remindAt: null });
-  });
+    const body = (e.allDay ? 'Весь день' : e.start + (e.end ? '–' + e.end : '')) + (e.location ? ' · ' + e.location : '');
+    everyone.forEach((uid) => byId[uid] && safe('notify ' + uid, () => notifyUser_(byId[uid], '🏀 ' + e.title, humanDate_(e.date) + ', ' + body, '/calendar', 'event-' + e.id)));
+  })));
 
   // 3. Мгновенные уведомления (назначили задачу, тест)
-  fsList_('outbox').forEach((m) => {
-    (m.to || []).forEach((uid) => byId[uid] && notifyUser_(byId[uid], m.title, m.body, m.url, ''));
+  safe('outbox', () => fsList_('outbox').forEach((m) => safe('outbox ' + m.id, () => {
     fsDelete_('outbox', m.id);
-  });
+    (m.to || []).forEach((uid) => byId[uid] && safe('notify ' + uid, () => notifyUser_(byId[uid], m.title, m.body, m.url, '')));
+  })));
 
   // 4. Утренний список
   const today = ymd_(new Date());
   const hm = Utilities.formatDate(new Date(), TZ, 'HH:mm');
   const due = users.filter((u) => u.digestEnabled !== false && u.lastDigest !== today && hm >= (u.digestTime || '08:30') && minutesBetween_(u.digestTime || '08:30', hm) < 120);
-  if (due.length) {
+  if (due.length) safe('digest', () => {
     const tasks = fsQuery_('tasks', 'dueDate', 'LESS_THAN_OR_EQUAL', today).filter((t) => t.status !== 'done');
     const events = fsQuery_('events', 'date', 'EQUAL', today).concat(scheduleFor_(today)).sort((a, b) => String(a.start).localeCompare(String(b.start)));
     let pay = null;
     try { pay = summary_().kpi; } catch (err) { Logger.log(err); }
-    due.forEach((u) => {
+    due.forEach((u) => safe('digest ' + u.id, () => {
       const mine = tasks.filter((t) => (t.assignees || []).indexOf(u.id) >= 0);
       const late = mine.filter((t) => t.dueDate < today);
       const now = mine.filter((t) => t.dueDate === today).sort((a, b) => String(a.dueTime || '99').localeCompare(String(b.dueTime || '99')));
@@ -701,10 +749,10 @@ function tick_() {
       events.slice(0, 3).forEach((e) => lines.push('🏀 ' + (e.allDay ? '' : e.start + ' ') + e.title));
       if (pay && pay.unpaid) lines.push('💳 Не оплатили за месяц: ' + pay.unpaid);
       const title = now.length ? 'План на сегодня: ' + now.length + ' ' + plural_(now.length, 'задача', 'задачи', 'задач') : 'Сегодня задач нет — ' + (u.name || '');
+      fsSet_('users', u.id, { lastDigest: today }); // до отправки, чтобы не слать дубли
       notifyUser_(u, '☀️ ' + title, lines.join('\n') || 'Хорошего дня!', '/', 'digest', now.length + late.length);
-      fsSet_('users', u.id, { lastDigest: today });
-    });
-  }
+    }));
+  });
 }
 
 /**
@@ -761,7 +809,10 @@ function backupFolder_() {
 function backup_() {
   const data = { createdAt: new Date().toISOString(), project: serviceAccount_().project_id, version: 1 };
   const counts = {};
-  BACKUP_COLLECTIONS.forEach((c) => { data[c] = fsList_(c); counts[c] = data[c].length; });
+  BACKUP_COLLECTIONS.forEach((c) => { data[c] = fsList_(c); counts[c] = data[c].length; }); // сбой чтения — исключение, файл не создаётся
+  if (BACKUP_COLLECTIONS.every((c) => !counts[c])) {
+    throw new Error('Бэкап не сохранён: все коллекции пустые. Старые копии не тронуты.');
+  }
   const folder = backupFolder_();
   const name = 'apex-backup-' + Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd_HH-mm') + '.json';
   folder.createFile(name, JSON.stringify(data, null, 1), 'application/json');

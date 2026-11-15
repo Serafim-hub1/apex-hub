@@ -88,7 +88,10 @@ export function TaskRow({ task, onOpen, showArea = true }) {
   const dc = dueClass(task);
   return (
     <div className={`trow ${task.status === 'done' ? 'done' : ''}`} onClick={() => onOpen(task)} role="button" tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter') onOpen(task); }}>
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return; // клавиши из вложенных кнопок не открывают задачу
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(task); }
+      }}>
       <TaskCheck task={task} />
       <div style={{ minWidth: 0 }}>
         <div className="tt">{task.title || 'Без названия'}</div>

@@ -80,8 +80,8 @@ export default function League() {
           <section className="panel" style={{ marginBottom: 16 }}>
             <div className="panel-h"><h2 className="h2">Матчи</h2></div>
             <div className="panel-b">
-              {L.grid.length === 0 && <Empty>В лиге пока нет игроков.</Empty>}
-              {L.grid.length > 0 && (
+              {!L.grid?.length && <Empty>В лиге пока нет игроков.</Empty>}
+              {L.grid?.length > 0 && (
                 <div className="lg-scroll">
                   <table className="lg-table">
                     <thead>

@@ -41,12 +41,16 @@ export default function Notes() {
   const nav = useNavigate();
   const kids = useTree(notes);
   const creating = useRef(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (params.get('new') === '1' && !creating.current) {
       creating.current = true;
       const parentId = params.get('parent') || null;
-      createNote({ parentId }).then((nid) => { creating.current = false; nav(`/notes/${nid}?edit=1`, { replace: true }); });
+      createNote({ parentId })
+        .then((nid) => { nav(`/notes/${nid}?edit=1`, { replace: true }); })
+        .catch(() => toast('Не создалось — нет связи', { bad: true }))
+        .finally(() => { creating.current = false; });
     }
   }, [params, createNote, nav, setParams]);
 
@@ -119,6 +123,7 @@ function NotePage({ note, kids }) {
   const [emoji, setEmoji] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [saved, setSaved] = useState(true);
+  const [failed, setFailed] = useState(false); // последняя запись не ушла в базу
   const timer = useRef(null);
   const ta = useRef(null);
   const pending = useRef({});
@@ -131,11 +136,15 @@ function NotePage({ note, kids }) {
   const flush = () => {
     clearTimeout(timer.current);
     const p = pending.current; pending.current = {};
-    if (Object.keys(p).length) updateNote(note.id, p).then(() => setSaved(true));
+    if (Object.keys(p).length) {
+      updateNote(note.id, p)
+        .then(() => { setFailed(false); setSaved(true); })
+        .catch(() => { setFailed(true); setSaved(true); toast('Не сохранено — нет связи', { bad: true }); });
+    }
   };
   const queue = (patch) => {
     pending.current = { ...pending.current, ...patch };
-    setSaved(false);
+    setSaved(false); setFailed(false);
     clearTimeout(timer.current);
     timer.current = setTimeout(flush, 700);
   };
@@ -177,7 +186,7 @@ function NotePage({ note, kids }) {
           <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><ChevronRight size={13} /><Link to={`/notes/${p.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>{p.icon} {p.title}</Link></span>
         ))}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, marginRight: 6 }}>{saved ? `Изменено ${fmt(note.updatedAt, 'd MMM, HH:mm')}${userById[note.updatedBy] ? ` · ${userById[note.updatedBy].name}` : ''}` : 'Сохраняем…'}</span>
+          <span style={{ fontSize: 12, marginRight: 6 }}>{failed ? 'Не сохранено' : saved ? `Изменено ${fmt(note.updatedAt, 'd MMM, HH:mm')}${userById[note.updatedBy] ? ` · ${userById[note.updatedBy].name}` : ''}` : 'Сохраняем…'}</span>
           <button className="icon-btn" onClick={() => updateNote(note.id, { pinned: !note.pinned })} aria-label={note.pinned ? 'Открепить' : 'Закрепить в меню'} title={note.pinned ? 'Открепить' : 'Закрепить в меню'}>
             {note.pinned ? <PinOff size={17} /> : <Pin size={17} />}
           </button>

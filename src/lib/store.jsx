@@ -51,13 +51,16 @@ export function StoreProvider({ children }) {
     const onErr = (e) => setSyncError(e?.code === 'permission-denied'
       ? 'Нет доступа к данным. Проверьте, что ваша почта есть в правилах Firestore.'
       : 'Нет связи с базой. Изменения сохранятся и отправятся, когда появится интернет.');
+    const fresh = (meta) => { if (!meta?.fromCache) setSyncError(null); };
     const subs = [
-      backend.listen('users', (l) => { setUsers(l); mark('users'); }, onErr),
-      backend.listen('tasks', (l) => { setTasks(l); mark('tasks'); }, onErr),
-      backend.listen('events', (l, meta) => { setEvents(l); mark('events'); if (!meta?.fromCache) setEventsFromServer(true); }, onErr),
-      backend.listen('notes', (l) => { setNotes(l); mark('notes'); }, onErr),
+      backend.listen('users', (l, meta) => { setUsers(l); mark('users'); fresh(meta); }, onErr),
+      backend.listen('tasks', (l, meta) => { setTasks(l); mark('tasks'); fresh(meta); }, onErr),
+      backend.listen('events', (l, meta) => { setEvents(l); mark('events'); fresh(meta); if (!meta?.fromCache) setEventsFromServer(true); }, onErr),
+      backend.listen('notes', (l, meta) => { setNotes(l); mark('notes'); fresh(meta); }, onErr),
     ];
-    return () => subs.forEach((u) => u && u());
+    const onOnline = () => setSyncError((e) => (e && e.startsWith('Нет связи') ? null : e));
+    window.addEventListener('online', onOnline);
+    return () => { window.removeEventListener('online', onOnline); subs.forEach((u) => u && u()); };
   }, [backend, auth.status]);
 
   // Создаём профиль при первом входе.
@@ -99,6 +102,19 @@ export function StoreProvider({ children }) {
     } catch (e) { console.warn('outbox', e); }
   }, [backend, me]);
 
+  // Стабильные ссылки: не зависят от данных, только от бэкенда.
+  const signIn = useCallback((e, p) => backend.signIn(e, p), [backend]);
+  const getIdToken = useCallback(() => backend.getIdToken(), [backend]);
+  const signOut = useCallback(async () => {
+    profileEnsured.current = false;
+    scheduleSeeded.current = false;
+    try { await backend.signOut(); } finally {
+      setUsers([]); setTasks([]); setEvents([]); setNotes([]);
+      setReady({ tasks: false, events: false, notes: false, users: false });
+      setEventsFromServer(false); setSyncError(null);
+    }
+  }, [backend]);
+
   const actions = useMemo(() => {
     if (!backend) return {};
     const myName = () => userById[me]?.name || 'Коллега';
@@ -109,9 +125,6 @@ export function StoreProvider({ children }) {
     });
 
     return {
-      signIn: (e, p) => backend.signIn(e, p),
-      signOut: () => { profileEnsured.current = false; return backend.signOut(); },
-      getIdToken: () => backend.getIdToken(),
       enablePush: () => backend.enablePush(me),
       resetDemo: backend.resetDemo,
 
@@ -228,14 +241,16 @@ export function StoreProvider({ children }) {
     };
   }, [backend, me, userById, events, notes, notify]);
 
-  const value = {
+  const loaded = ready.tasks && ready.events && ready.notes;
+  const value = useMemo(() => ({
     demo: DEMO,
     mode: backend?.mode,
     auth, me, profile, users, userById,
     tasks, events: allEvents, schedule: rules, notes,
-    loaded: ready.tasks && ready.events && ready.notes,
+    loaded,
     syncError,
+    signIn, signOut, getIdToken,
     ...actions,
-  };
+  }), [backend, auth, me, profile, users, userById, tasks, allEvents, rules, notes, loaded, syncError, signIn, signOut, getIdToken, actions]);
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
 }

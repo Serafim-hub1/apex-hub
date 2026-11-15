@@ -46,12 +46,35 @@ export function AvatarStack({ ids = [], max = 3 }) {
 }
 
 /* ── Модальное окно / нижняя шторка ── */
+// Стек открытых окон: Esc закрывает только верхнее (подтверждение поверх редактора не закрывает редактор).
+const modalStack = [];
 export function Modal({ onClose, children, size = '', labelledBy }) {
   const ref = useRef(null);
   const overlayRef = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  // Фокус внутрь окна при открытии и обратно на кнопку, которая его открыла, при закрытии.
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const prevFocus = document.activeElement;
+    const box = ref.current;
+    if (box && !box.contains(document.activeElement)) {
+      box.setAttribute('tabindex', '-1');
+      box.focus({ preventScroll: true });
+    }
+    return () => { if (prevFocus && document.contains(prevFocus)) prevFocus.focus?.({ preventScroll: true }); };
+  }, []);
+  useEffect(() => {
+    const me = {};
+    modalStack.push(me);
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || modalStack[modalStack.length - 1] !== me) return;
+      e.stopPropagation();
+      closeRef.current();
+    };
     document.addEventListener('keydown', onKey);
+    return () => { const i = modalStack.indexOf(me); if (i >= 0) modalStack.splice(i, 1); document.removeEventListener('keydown', onKey); };
+  }, []);
+  useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     // iPhone: клавиатура уменьшает только «видимую» область, а шторка остаётся на весь экран и кнопка уезжает под клавиатуру.
@@ -65,7 +88,7 @@ export function Modal({ onClose, children, size = '', labelledBy }) {
     fit();
     vv?.addEventListener('resize', fit); vv?.addEventListener('scroll', fit);
     return () => {
-      document.removeEventListener('keydown', onKey); document.body.style.overflow = prev;
+      document.body.style.overflow = prev;
       vv?.removeEventListener('resize', fit); vv?.removeEventListener('scroll', fit);
     };
   }, [onClose]);

@@ -1,16 +1,25 @@
+import { lazy } from 'react';
 import { HashRouter, MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { EMBED } from './config';
 import { StoreProvider, useStore } from './lib/store';
+import { reloadOnce } from './lib/reload';
 import { ToastProvider } from './components/ui';
 import { Splash } from './components/motion';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Today from './pages/Today';
-import Tasks from './pages/Tasks';
-import Calendar from './pages/Calendar';
-import Club from './pages/Club';
-import Notes from './pages/Notes';
-import Settings from './pages/Settings';
+
+// Остальные разделы грузятся при первом открытии — стартовый файл меньше.
+// Ошибка загрузки = устаревшая версия после выкладки → один раз перезагружаемся.
+const page = (load) => lazy(() => load().catch((e) => {
+  if (reloadOnce()) return new Promise(() => {});
+  throw e;
+}));
+const Tasks = page(() => import('./pages/Tasks'));
+const Calendar = page(() => import('./pages/Calendar'));
+const Club = page(() => import('./pages/Club'));
+const Notes = page(() => import('./pages/Notes'));
+const Settings = page(() => import('./pages/Settings'));
 
 function Boot() {
   const { auth } = useStore();

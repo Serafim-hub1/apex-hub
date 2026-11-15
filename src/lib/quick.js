@@ -3,8 +3,8 @@
 import { ymd, addDays } from './dates';
 
 const WEEKDAYS = [
-  [/\b(в\s+)?(пн|понедельник\w*)\b/i, 1], [/\b(во?\s+)?(вт|вторник\w*)\b/i, 2], [/\b(в\s+)?(ср|сред[ау])\b/i, 3],
-  [/\b(в\s+)?(чт|четверг\w*)\b/i, 4], [/\b(в\s+)?(пт|пятниц[ау])\b/i, 5], [/\b(в\s+)?(сб|суббот[ау])\b/i, 6],
+  [/\b(в\s+)?(пн|понедельник[а-яё]*)\b/i, 1], [/\b(во?\s+)?(вт|вторник[а-яё]*)\b/i, 2], [/\b(в\s+)?(ср|сред[ау])\b/i, 3],
+  [/\b(в\s+)?(чт|четверг[а-яё]*)\b/i, 4], [/\b(в\s+)?(пт|пятниц[ау])\b/i, 5], [/\b(в\s+)?(сб|суббот[ау])\b/i, 6],
   [/\b(в\s+)?(вс|воскресень[ея])\b/i, 0],
 ];
 
@@ -35,7 +35,7 @@ export function parseQuick(input, users = []) {
   if (m && m[4] === '.' && !m[2] && Number(m[5]) <= 12) m = null;
   if (m) { out.dueTime = `${m[3].padStart(2, '0')}:${m[5]}`; text = text.replace(m[0], m[1] + ' '); }
   else {
-    m = text.match(new RegExp(B + 'в\\s+([01]?\\d|2[0-3])(\\s*час\\w*)?' + E, 'i'));
+    m = text.match(new RegExp(B + 'в\\s+([01]?\\d|2[0-3])(?:(\\s*(?:часов|часа|час|утра|вечера|дня))|(?=\\s*$)|(?=\\s+(?:сегодня|завтра|послезавтра)))' + E, 'i'));
     if (m) { out.dueTime = `${m[2].padStart(2, '0')}:00`; text = text.replace(m[0], m[1] + ' '); }
   }
 
@@ -51,7 +51,8 @@ export function parseQuick(input, users = []) {
     let year = m[4] ? Number(m[4].length === 2 ? '20' + m[4] : m[4]) : now.getFullYear();
     let d = new Date(year, mon, day);
     if (!m[4] && d < new Date(now.getFullYear(), now.getMonth(), now.getDate())) d = new Date(year + 1, mon, day);
-    if (d.getDate() === day) { out.dueDate = ymd(d); text = text.replace(m[0], m[1] + ' '); }
+    // Месяц больше 12 или день больше 31 — это не дата (например, «5.300»).
+    if (mon < 12 && day <= 31 && d.getDate() === day) { out.dueDate = ymd(d); text = text.replace(m[0], m[1] + ' '); }
   } else {
     for (const [re, dow] of WEEKDAYS) {
       const r2 = new RegExp(B + re.source.replace(/\\b/g, '') + E, 'i');

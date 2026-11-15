@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Wallet, RefreshCw, Plus, ClipboardCheck, UserPlus, Search, CheckCheck, Phone, FileSpreadsheet, AlertTriangle, Send, Copy } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { clubCall, clubConfigured, readCache, reminderText, reminderMessage, payContact, phoneDigits, cachedPlayer, loadPlayer, prefetchPlayers, forgetPlayers, DEFAULT_LISTS, PRICES } from '../lib/club';
-import { Modal, ModalHead, Empty, TitleArea, Collapse, SkelRows, useToast } from '../components/ui';
+import { Modal, ModalHead, Confirm, Empty, TitleArea, Collapse, SkelRows, useToast } from '../components/ui';
 import { todayStr, fmt, humanDay } from '../lib/dates';
 import { CountUp } from '../components/motion';
 import { useClub, rub } from './club/shared';
@@ -148,7 +148,7 @@ function Payments({ openAdd }) {
           {sections.filter((sec) => sec.items.length > 0).map((sec) => (
             <Collapse key={sec.key} id={`pay-${sec.key}`} title={sec.label} count={sec.items.length} defaultOpen={sec.open} forceOpen={!!q} className={`pay-sec ${sec.key}`}>
               {sec.items.map((p) => (
-                <div key={p.id} className="prow" onPointerDown={() => warm(p.id)} onClick={() => setCard(p)} style={{ cursor: 'pointer' }}>
+                <div key={p.id} className="prow" onClick={() => { warm(p.id); setCard(p); }} style={{ cursor: 'pointer' }}>
                   <div style={{ minWidth: 0 }}>
                     <div className="n">{p.fio}</div>
                     <div className="s">
@@ -276,15 +276,28 @@ function PayForm({ initial, onClose, onSaved, payments = [] }) {
     set({ abonement: ab, amount: priceFor(ab, p.group) ?? d.amount });
   };
 
-  const save = async () => {
+  const [dup, setDup] = useState(null);
+  const save = async (force = false) => {
+    if (busy) return;
+    if (!d.date) { setErr('Укажите дату'); return; }
     setBusy(true); setErr('');
     try {
-      await clubCall('payAdd', { pay: { ...d, fio: player.fio, amount: Number(d.amount) } }, getIdToken);
+      const res = await clubCall('payAdd', { pay: { ...d, fio: player.fio, playerId: player.id, amount: Number(d.amount), force } }, getIdToken);
+      if (res?.duplicate) { setDup(res.duplicate); return; }
+      setDup(null);
       forgetPlayers(player.id);
       toast(`Оплата ${player.fio.split(' ')[0]} записана в таблицу`);
       onSaved(); onClose();
-    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e) { setDup(null); setErr(e.message); } finally { setBusy(false); }
   };
+
+  if (dup) {
+    return (
+      <Confirm title="Такая оплата уже есть" action={busy ? 'Записываем…' : 'Да, записать'}
+        text={`Такая оплата уже есть: ${dup.date}, ${dup.amount} ₽, ${dup.type}. Записать ещё раз?`}
+        onYes={() => save(true)} onNo={() => setDup(null)} />
+    );
+  }
 
   return (
     <Modal onClose={onClose}>
@@ -319,7 +332,7 @@ function PayForm({ initial, onClose, onSaved, payments = [] }) {
       </div>
       <div className="modal-f">
         <button className="btn ghost" onClick={onClose}>Отмена</button>
-        <button className="btn primary" onClick={save} disabled={busy || !player || !d.amount}>{busy ? 'Записываем…' : 'Записать в таблицу'}</button>
+        <button className="btn primary" onClick={() => save()} disabled={busy || !player || !d.amount || !d.date}>{busy ? 'Записываем…' : 'Записать в таблицу'}</button>
       </div>
     </Modal>
   );
@@ -470,7 +483,20 @@ function Attendance() {
   const [group, setGroup] = useState(todays[0]?.group || 'Junior');
   const [date, setDate] = useState(todayStr());
   const att = useClub('attGet', { group, date });
-  const [marks, setMarks] = useState({});
+  // Отметки = данные таблицы + несохранённые правки пользователя (правки относятся к конкретной группе и дате).
+  const slot = group + '|' + date;
+  const [edits, setEdits] = useState({ slot, m: {} });
+  const myEdits = edits.slot === slot ? edits.m : {};
+  const marks = useMemo(() => ({
+    ...Object.fromEntries((att.data?.players || []).map((p) => [p.id, p.mark || ''])),
+    ...myEdits,
+  }), [att.data, myEdits]);
+  const setMarks = (fn) => setEdits((e) => {
+    const base = e.slot === slot ? e.m : {};
+    const cur = { ...Object.fromEntries((att.data?.players || []).map((p) => [p.id, p.mark || ''])), ...base };
+    return { slot, m: { ...base, ...fn(cur) } };
+  });
+  const ready = Boolean(att.data) && !att.busy; // данные именно для этих группы/даты загружены
   const [busy, setBusy] = useState(false);
   const [card, setCard] = useState(null);
   const [form, setForm] = useState(null);
@@ -479,20 +505,18 @@ function Attendance() {
   // Был на тренировке (✓), но нет ни абонемента, ни разовой оплаты за этот день
   const unpaidHere = (p) => marks[p.id] === '✓' && p.pay === 'Не оплачен';
 
-  useEffect(() => {
-    if (att.data) setMarks(Object.fromEntries(att.data.players.map((p) => [p.id, p.mark || ''])));
-  }, [att.data]);
-
   const recent = events.filter((e) => e.type === 'training' && e.group === group && e.date <= todayStr()).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
   const present = Object.values(marks).filter((m) => m === '✓').length;
   const changed = att.data && att.data.players.some((p) => (p.mark || '') !== (marks[p.id] || ''));
 
   const save = async () => {
+    if (busy || !ready) return;
     setBusy(true);
     try {
       await clubCall('attSet', { group, date, marks }, getIdToken);
       forgetPlayers();
       toast(`Посещаемость за ${fmt(date, 'd MMMM')} сохранена`);
+      setEdits({ slot, m: {} });
       att.reload();
     } catch (e) { toast(e.message, { bad: true }); } finally { setBusy(false); }
   };
@@ -539,7 +563,7 @@ function Attendance() {
         <div className="modal-f" style={{ borderRadius: '0 0 var(--r-lg) var(--r-lg)', position: 'static' }}>
           <button className="btn ghost" onClick={() => setMarks((x) => Object.fromEntries(Object.keys(x).map((k) => [k, x[k] || '✓'])))}><CheckCheck size={16} /> Остальные были</button>
           <span className="sp" />
-          <button className="btn primary" onClick={save} disabled={busy || !changed}>{busy ? 'Сохраняем…' : 'Сохранить в таблицу'}</button>
+          <button className="btn primary" onClick={save} disabled={busy || !ready || !changed}>{busy ? 'Сохраняем…' : 'Сохранить в таблицу'}</button>
         </div>
       )}
       {card && <PlayerCard id={card.id} row={card.status ? card : null} onClose={() => setCard(null)} onPay={(f) => { setCard(null); setForm({ ...f, date }); }} />}
@@ -595,10 +619,11 @@ function LeadForm({ lead, onClose, onSaved }) {
   const set = (p) => setD((x) => ({ ...x, ...p }));
   const L = DEFAULT_LISTS;
   const save = async () => {
+    if (busy) return;
     setBusy(true);
     try {
       if (isNew) await clubCall('leadAdd', { lead: d }, getIdToken);
-      else await clubCall('leadUpdate', { row: lead.row, patch: d }, getIdToken);
+      else await clubCall('leadUpdate', { row: lead.row, patch: { ...d, prevFio: lead.fio } }, getIdToken);
       toast(isNew ? 'Заявка добавлена в таблицу' : 'Заявка обновлена');
       onSaved(); onClose();
     } catch (e) { toast(e.message, { bad: true }); } finally { setBusy(false); }
