@@ -26,6 +26,9 @@ export function EventEditor({ event, initial, onClose }) {
 
   const save = async () => {
     if (!d.title.trim()) return;
+    if (!d.date) { toast('Укажите дату события', { bad: true }); return; }
+    if (isNew && repeat && !until) { toast('Укажите дату окончания повтора', { bad: true }); return; }
+    if (isNew && repeat && until < d.date) { toast('Конец повтора раньше начала', { bad: true }); return; }
     const clean = {
       title: d.title.trim(), type: d.type, group: d.group || '', date: d.date, allDay: !!d.allDay,
       start: d.allDay ? null : d.start || null, end: d.allDay ? null : d.end || null,

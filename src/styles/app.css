@@ -697,6 +697,7 @@ textarea.title-input { resize: none; overflow: hidden; display: block; min-heigh
 /* Модалки и тосты — на общих кривых. */
 .overlay { animation: in-fade var(--dur-2) var(--ease); }
 .modal { animation: rise var(--dur-2) var(--ease); }
+.modal:focus { outline: none; } /* фокус ставится на окно программно — рамка не нужна */
 @media (max-width: 640px) { .modal { animation: sheet 0.36s var(--ease); } }
 .toast { animation: rise var(--dur-2) var(--ease); }
 

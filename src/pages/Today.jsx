@@ -60,7 +60,7 @@ export default function Today() {
   const open = tasks.filter((t) => t.status !== 'done' && mineFilter(t));
   const overdue = open.filter((t) => t.dueDate && t.dueDate < today).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const dueToday = open.filter((t) => t.dueDate === today).sort((a, b) => timeKey(a).localeCompare(timeKey(b)));
-  const doneToday = tasks.filter((t) => t.status === 'done' && mineFilter(t) && (t.doneAt || '').slice(0, 10) === today);
+  const doneToday = tasks.filter((t) => t.status === 'done' && mineFilter(t) && (t.doneAt ? ymd(new Date(t.doneAt)) === today : false));
   const week = open.filter((t) => t.dueDate > today && t.dueDate <= weekEnd).sort((a, b) => (a.dueDate + timeKey(a)).localeCompare(b.dueDate + timeKey(b)));
   const noDate = open.filter((t) => !t.dueDate && t.priority === 'high');
 

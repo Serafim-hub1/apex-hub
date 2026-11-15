@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { NavLink, Link, Outlet, useNavigate, useLocation, useNavigationType } from 'react-router-dom';
 import {
@@ -10,7 +10,7 @@ import { todayStr } from '../lib/dates';
 import { EMBED } from '../config';
 import { reduced } from './motion';
 import { SummitMark, Wordmark } from './Brand';
-import { Avatar, ErrorBoundary } from './ui';
+import { Avatar, ErrorBoundary, SkelRows } from './ui';
 import { TaskEditor } from './Tasks';
 import { EventEditor } from './EventEditor';
 
@@ -187,7 +187,7 @@ export default function Layout() {
             </div>
           )}
           {/* key по адресу — при переходе между разделами страница заново проигрывает вход */}
-          <div className="route" key={loc.pathname}><ErrorBoundary><Outlet /></ErrorBoundary></div>
+          <div className="route" key={loc.pathname.split('/')[1] || 'today'}><ErrorBoundary><Suspense fallback={<SkelRows n={5} />}><Outlet /></Suspense></ErrorBoundary></div>
         </div>
 
         <nav className="tabbar" aria-label="Разделы">

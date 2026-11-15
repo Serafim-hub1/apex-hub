@@ -72,7 +72,9 @@ export const clubConfigured = () => DEMO || Boolean(APPS_SCRIPT_URL);
 const CACHE = 'apex-club-cache:';
 /** Ответ таблицы нужной формы? Иначе страницы, читающие kpi/payments, падают целиком. */
 const SHAPE = { summary: (d) => Boolean(d && d.kpi && Array.isArray(d.payments)) };
-const shapeOk = (action, data) => !SHAPE[action] || SHAPE[action](data);
+const shapeOk = (key, data) => { const f = SHAPE[String(key).split(':')[0]]; return !f || f(data); };
+/** Ключ кэша: действие, а для действий с параметрами — действие:JSON(параметры). */
+export const cacheKey = (action, payload) => (payload && Object.keys(payload).length ? action + ':' + JSON.stringify(payload) : action);
 export function readCache(key) {
   try {
     const c = JSON.parse(localStorage.getItem(CACHE + key));
@@ -91,21 +93,27 @@ export async function clubCall(action, payload = {}, getIdToken) {
   if (!APPS_SCRIPT_URL) throw new Error('Таблица не подключена: задайте VITE_APPS_SCRIPT_URL.');
   const idToken = await getIdToken();
   let res;
+  let json;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30000);
   try {
     res = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       // text/plain — чтобы браузер не делал preflight-запрос, который Apps Script не поддерживает
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action, idToken, ...payload }),
+      signal: ctrl.signal,
     });
-  } catch {
-    throw new Error('Нет связи с таблицей. Проверьте интернет.');
+    json = await res.json().catch(() => null);
+  } catch (e) {
+    throw new Error(e?.name === 'AbortError' ? 'Таблица не отвечает — проверьте связь и повторите' : 'Нет связи');
+  } finally {
+    clearTimeout(timer);
   }
-  const json = await res.json().catch(() => null);
   if (!json) throw new Error('Таблица ответила непонятно. Проверьте, что Apps Script опубликован как веб-приложение с доступом «Все».');
   if (!json.ok) throw new Error(json.error || 'Ошибка таблицы');
   if (!shapeOk(action, json.data)) throw new Error('Таблица прислала ответ в неожиданной форме. Нажмите «Повторить»; если не проходит — скрипт таблицы не обновился.');
-  if (['summary', 'players', 'leads', 'payRecent', 'league', 'finance'].includes(action)) writeCache(action, json.data);
+  if (['summary', 'players', 'leads', 'payRecent', 'league', 'finance', 'attGet'].includes(action)) writeCache(cacheKey(action, payload), json.data);
   return json.data;
 }
 
@@ -126,8 +134,11 @@ export function loadPlayer(id, getIdToken, { fresh = 20000 } = {}) {
   if (hit && Date.now() - hit.at < fresh) return Promise.resolve(hit.data);
   if (cardBusy.has(k)) return cardBusy.get(k);
   const p = clubCall('player', { id }, getIdToken)
-    .then((data) => { cardMem.set(k, { at: Date.now(), data }); writeCache(CARD + k, data); return data; })
-    .finally(() => cardBusy.delete(k));
+    .then((data) => {
+      if (cardBusy.get(k) === p) { cardMem.set(k, { at: Date.now(), data }); writeCache(CARD + k, data); } // забытый запрос в кэш не пишем
+      return data;
+    })
+    .finally(() => { if (cardBusy.get(k) === p) cardBusy.delete(k); });
   cardBusy.set(k, p);
   return p;
 }
@@ -141,10 +152,12 @@ export async function prefetchPlayers(ids, getIdToken) {
 export function forgetPlayers(id) {
   if (id !== undefined && id !== null) {
     cardMem.delete(String(id));
+    cardBusy.delete(String(id));
     try { localStorage.removeItem(CACHE + CARD + id); } catch { /* */ }
     return;
   }
   cardMem.clear();
+  cardBusy.clear();
   try {
     Object.keys(localStorage).filter((k) => k.startsWith(CACHE + CARD)).forEach((k) => localStorage.removeItem(k));
   } catch { /* */ }
@@ -324,7 +337,9 @@ function demoClub(action, p) {
     case 'payRecent': return [...db.journal].reverse().slice(0, 15).map((j) => ({ ...j, date: fmt(j.date, 'dd.MM.yyyy') }));
     case 'payAdd': {
       p = p.pay;
-      const pl = db.players.find((x) => x.fio === p.fio);
+      const pl = (p.playerId && db.players.find((x) => x.id === p.playerId)) || db.players.find((x) => x.fio === p.fio);
+      const dup = !p.force && db.journal.find((j) => j.id === (pl?.id || '') && j.fio === p.fio && j.date === p.date && Number(j.amount) === Number(p.amount) && j.abonement === p.abonement);
+      if (dup) return { duplicate: { date: fmt(dup.date, 'dd.MM.yyyy'), amount: dup.amount, type: dup.abonement } };
       db.journal.push({ payId: 'PAY-' + String(db.journal.length + 1).padStart(4, '0'), id: pl?.id || '', fio: p.fio, group: pl?.group || '',
         date: p.date, amount: Number(p.amount), status: p.status, method: p.method, abonement: p.abonement, comment: p.comment || '', by: 'Демо' });
       saveDemo(db);
@@ -382,7 +397,10 @@ function demoClub(action, p) {
       return { row };
     }
     case 'leadUpdate': {
-      db.leads = db.leads.map((l) => (l.row === p.row ? { ...l, ...p.patch } : l));
+      const { prevFio, ...patch } = p.patch || {};
+      const cur = db.leads.find((l) => l.row === p.row);
+      if (prevFio !== undefined && cur && cur.fio !== prevFio) throw new Error('Строка в таблице сдвинулась — обновите список заявок');
+      db.leads = db.leads.map((l) => (l.row === p.row ? { ...l, ...patch } : l));
       saveDemo(db);
       return { row: p.row };
     }

@@ -4,25 +4,12 @@ import { useStore } from '../lib/store';
 import { APPS_SCRIPT_URL, REMINDERS } from '../config';
 import { Avatar, Switch, Collapse, useToast } from '../components/ui';
 import { ScheduleEditor } from '../components/ScheduleEditor';
+import { applyTheme, getTheme } from '../lib/theme';
 
 const COLORS = ['#58D6FF', '#F5F6F4', '#A7ADB4', '#7EE3B8', '#FFC24B', '#FF8A8A'];
 const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 
-export function getTheme() { try { return localStorage.getItem('apex-theme') || 'system'; } catch { return 'system'; } }
-const lightMq = () => window.matchMedia?.('(prefers-color-scheme: light)');
-/** Цвет системной панели (Android, установленное приложение) — под цвет фона выбранной темы. */
-function syncThemeColor(t) {
-  const light = t === 'light' || (t === 'system' && !!lightMq()?.matches);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', light ? '#f5f6f4' : '#111315');
-}
-export function applyTheme(t) {
-  const root = document.documentElement;
-  if (t === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
-  try { localStorage.setItem('apex-theme', t); } catch { /* */ }
-  syncThemeColor(t);
-}
-lightMq()?.addEventListener?.('change', () => syncThemeColor(getTheme()));
 
 export default function Settings() {
   const { profile, updateProfile, signOut, enablePush, sendTestPush, demo, resetDemo } = useStore();
